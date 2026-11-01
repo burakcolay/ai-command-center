@@ -110,6 +110,11 @@ class ClaudeCodeAdapter(ModelAdapter):
 
     def _args(self, req: RunRequest) -> list[str]:
         args = ["-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence"]
+        # Project-level .claude/settings.json inside a repo is untrusted (it can define hooks
+        # that run commands). Only the user's own settings plus ours are loaded.
+        args += ["--setting-sources", "user"]
+        if req.settings:
+            args += ["--settings", json.dumps(req.settings)]
         if req.tools is not None:
             args += ["--tools", ",".join(req.tools)]
             if req.tools:

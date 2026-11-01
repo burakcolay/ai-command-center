@@ -57,7 +57,7 @@ export function ApprovalsView({
               className="flex w-full items-center gap-4 bg-panel px-4 py-3 text-left hover:bg-raised"
             >
               <span className="font-mono text-[10.5px] uppercase tracking-wider text-faint">
-                {a.kind === "plan" ? "Plan" : a.kind}
+                {a.kind === "plan" ? "Plan" : a.kind === "merge" ? "Birleştirme" : a.kind}
               </span>
               <span className="min-w-0 flex-1 truncate text-[14px] text-fg">{a.task.title}</span>
               <StatusPill status={a.task.status} />

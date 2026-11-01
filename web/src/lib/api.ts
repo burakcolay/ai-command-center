@@ -7,6 +7,7 @@ import type {
   ModelInfo,
   Project,
   Task,
+  TaskDiff,
   TaskEvent,
 } from "./types";
 
@@ -51,6 +52,7 @@ export const api = {
       project_id,
     }),
 
+  diff: (taskId: number) => req<TaskDiff>(`/tasks/${taskId}/diff`),
   events: (taskId: number) => req<TaskEvent[]>(`/tasks/${taskId}/events`),
   decide: (taskId: number, decision: Decision, note?: string) =>
     post<Task>(`/tasks/${taskId}/decision`, { decision, note: note || null }),

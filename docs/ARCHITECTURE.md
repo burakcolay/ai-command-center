@@ -50,7 +50,15 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 
 - Sunucu yalnızca `127.0.0.1` adresinde dinler. `Host` başlığı localhost olmayan istekler reddedilir (DNS rebinding koruması). WebSocket'te `Origin` kontrol edilir.
 - **İzin kontrolü CLI seviyesinde yapılır.** Ajanın araç listesi `--tools` ve `--allowedTools` ile, izin modu `--permission-mode dontAsk` ile verilir. Örneğin Orchestrator yalnızca `Read`, `Glob` ve `Grep` kullanabilir.
-- **Asıl kontrol noktası merge'dür** (sıradaki sürüm). Yazan ajanlar görev başına ayrı bir `git worktree` içinde çalışır. Diff, test ve kullanıcı onayı olmadan ana branch'e hiçbir şey girmez.
+- **Asıl kontrol noktası merge'dür.** Her görev `data/worktrees/task-N` altında, `orbit/task-N` branch'inde ayrı bir git worktree'de çalışır. Kullanıcının çalışma klasörüne yalnızca onaylanan bir birleştirme dokunur.
+- **Bash kullanan ajanlar** (Geliştirici, QA) Claude Code'un işletim sistemi seviyesindeki sandbox'ında çalışır (`agents.SANDBOX_SETTINGS`):
+  - Yalnızca worktree'ye yazabilirler.
+  - `~/.ssh`, `~/.aws`, `~/.config/gh` gibi kimlik bilgisi klasörlerini okuyamazlar.
+  - Ağ erişimleri yalnızca paket kayıtlarıyla (npm, PyPI) sınırlıdır.
+  - `failIfUnavailable: true`: sandbox başlayamazsa komut hiç çalışmaz. Bu hem kapalı hem açık durumda test edildi.
+- **Salt okunur ajanlar** (QA, İnceleme, Araştırma, Mimar) dosya değiştirirse Orbit bu değişiklikleri adım sonunda otomatik geri alır ve günlüğe yazar.
+- **Git işlemlerini her zaman Orbit yapar.** Ajanlar commit, merge veya push yapmaz. Derleme ve test çöpleri (`__pycache__`, `node_modules`, `.pytest_cache` …) proje `.gitignore`'u olmasa bile commit'lere girmez.
+- **Repodaki `.claude/settings.json` güvenilmez veridir.** Claude Code `--setting-sources user` ile başlatılır; böylece bir repo kendi hook'larıyla komut çalıştıramaz.
 - Proje dosyaları, web sayfaları ve skill'ler güvenilmeyen veri sayılır. Planlayıcı sistem prompt'u bunu belirtir. Daha önemlisi, izinler zaten koddadır; prompt değiştirse bile araç listesi değişmez.
 - Bir proje uygulamadan kaldırıldığında diskteki dosyalar silinmez.
 
@@ -78,26 +86,37 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 
 ## 5. Veri modeli (SQLite)
 
-`projects`, `chats`, `messages`, `tasks`, `task_events` (yalnızca ekleme yapılan günlük ve canlı akış), `approvals`, `audit_logs`.
+`projects`, `chats`, `messages`, `tasks`, `task_steps` (yürütme adımları ve özetleri), `task_events` (yalnızca ekleme yapılan günlük ve canlı akış), `approvals`, `audit_logs`.
+
+**Şema geçişi:** `db._add_missing_columns` yalnızca ekleme yapar; yeni sütunları mevcut veritabanına `ALTER TABLE ADD COLUMN` ile ekler. Eski veritabanları sürüm güncellemelerinde bozulmaz.
 
 Dokümandaki diğer tablolar (`model_usage`, `skill_registry`, `mcp_connections` …) ilgili faz geldiğinde eklenecek.
 
 ## 6. Görev yaşam döngüsü
 
+Görevin bir `stage` alanı (plan → execute → merge → done) ve bir `status` alanı vardır:
+
 ```
-planning ──► waiting_approval ──approve──► queued ──► running ──► completed
-   │               │  └─request_changes──► planning        │
-   │               └─reject──► cancelled                   └──► failed ──retry──► planning
-   └──(hata)──► failed            her aktif durumdan ──cancel──► cancelled
+[plan]    planning ──► waiting_approval ──approve──► queued
+                         ├─request_changes──► planning (yeniden plan)
+                         └─reject──► cancelled
+[execute] queued ──► running ──(adım adım, her adım bir commit)──► waiting_approval [merge]
+                       └──(hata)──► failed ──retry──► kaldığı adımdan devam
+[merge]   waiting_approval ──approve──► git merge --no-ff ──► completed (worktree + branch silinir)
+                         ├─request_changes──► "Geri bildirimi uygula" adımı eklenir ──► queued
+                         └─reject──► cancelled (worktree + branch silinir)
+Her aktif durumdan cancel ──► cancelled
 ```
 
-Sunucu yeniden başlatıldığında `planning` veya `running` durumunda kalan görevler `failed` olarak işaretlenir ve "Tekrar dene" ile sürdürülebilir. Checkpoint/resume Faz 8'de gelecek.
+- **Birleştirme güvenliği:** Birleştirme yalnızca görevin başladığı branch açıkken yapılır. Çakışma olursa `merge --abort` ile geri alınır ve onay beklemede kalır.
+- **Kaldığı yerden devam:** Her adım ayrı bir commit olduğu için checkpoint görevi görür. Sunucu yeniden başlarsa kuyruktaki görevler devam eder; yarıda kalanlar "Kaldığı yerden devam et" ile tamamlanmamış adımdan sürdürülür.
+- **Eşzamanlılık:** Aynı anda en fazla `MAX_PARALLEL_TASKS = 1` görev yürütülür. Bu, RAM ve abonelik kotası için bilinçli bir seçim.
 
 ## 7. Yol haritası durumu
 
 - [x] **Faz 1 — Temel:** iskelet, SQLite, sohbet, projeler, loglar, WebSocket
 - [x] **Adaptör arayüzü + Claude Code adaptörü + maliyet koruması**
 - [x] **Orchestrator v0:** plan üretimi, onay, değişiklik talebi, red, iptal, tekrar deneme
-- [ ] **Sıradaki — Yürütme motoru:** git worktree, Developer ajanı, canlı çıktı, diff ekranı, merge onayı
-- [ ] Faz 2: Codex, Ollama ve Grok adaptörleri
+- [x] **Yürütme motoru:** git worktree, adım adım ajanlar, sandbox, diff ekranı, değişiklik isteme, birleştirme onayı, kaldığı yerden devam
+- [ ] **Sıradaki — Faz 2:** Codex ve Ollama adaptörleri (Claude kotasını rahatlatmak için), ardından Grok
 - [ ] Faz 4–8: dokümandaki sırayla

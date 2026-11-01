@@ -1,6 +1,9 @@
 from typing import Any
 
-from acc.models import Approval, Chat, Message, Project, Task, TaskEvent
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from acc.models import Approval, Chat, Message, Project, Task, TaskEvent, TaskStep
 
 
 def _ts(dt) -> str | None:
@@ -31,6 +34,29 @@ def message(m: Message) -> dict[str, Any]:
     }
 
 
+def step(st: TaskStep) -> dict[str, Any]:
+    return {
+        "id": st.id,
+        "step_id": st.step_id,
+        "seq": st.seq,
+        "title": st.title,
+        "agent": st.agent,
+        "description": st.description,
+        "kind": st.kind,
+        "status": st.status,
+        "summary": st.summary,
+        "commit": st.commit,
+        "adapter_id": st.adapter_id,
+        "started_at": _ts(st.started_at),
+        "finished_at": _ts(st.finished_at),
+    }
+
+
+def task_full(s: Session, t: Task) -> dict[str, Any]:
+    steps = s.scalars(select(TaskStep).where(TaskStep.task_id == t.id).order_by(TaskStep.seq))
+    return {**task(t), "steps": [step(st) for st in steps]}
+
+
 def task(t: Task) -> dict[str, Any]:
     return {
         "id": t.id,
@@ -42,6 +68,10 @@ def task(t: Task) -> dict[str, Any]:
         "plan": t.plan,
         "adapter_id": t.adapter_id,
         "error": t.error,
+        "stage": t.stage,
+        "branch": t.branch,
+        "base_branch": t.base_branch,
+        "merged_commit": t.merged_commit,
         "created_at": _ts(t.created_at),
         "updated_at": _ts(t.updated_at),
     }

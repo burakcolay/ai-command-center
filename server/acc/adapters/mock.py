@@ -42,6 +42,10 @@ class MockAdapter(ModelAdapter):
         return Health(ModelState.AVAILABLE, "Demo modu aktif.")
 
     async def run(self, req: RunRequest, run_id: str) -> AsyncIterator[AdapterEvent]:
+        if req.json_schema is None:  # an execution step, not planning
+            async for ev in self._step(req, run_id):
+                yield ev
+            return
         yield AdapterEvent("log", {"text": "Demo: istek analiz ediliyor"})
         await asyncio.sleep(self.delay)
         if run_id in self._cancelled:
@@ -81,6 +85,20 @@ class MockAdapter(ModelAdapter):
             "risks": ["Bu bir demo planıdır; gerçek analiz yapılmadı."],
         }
         yield AdapterEvent("result", {"text": plan["summary"], "structured": plan})
+
+    async def _step(self, req: RunRequest, run_id: str) -> AsyncIterator[AdapterEvent]:
+        await asyncio.sleep(self.delay)
+        if run_id in self._cancelled:
+            raise AdapterError("Çalıştırma iptal edildi.")
+        if req.cwd and "Write" in (req.tools or []):
+            f = req.cwd / "ORBIT_DEMO.md"
+            existing = f.read_text() if f.exists() else "# Orbit demo\n\n"
+            f.write_text(existing + "Demo adaptörünün yazdığı satır.\n")
+            yield AdapterEvent("tool", {"name": "Write", "input": {"file_path": "ORBIT_DEMO.md"}})
+            yield AdapterEvent("result", {"text": "Demo: ORBIT_DEMO.md güncellendi."})
+        else:
+            yield AdapterEvent("tool", {"name": "Grep", "input": {"pattern": "TODO"}})
+            yield AdapterEvent("result", {"text": "Demo: inceleme tamamlandı, sorun yok."})
 
     async def cancel(self, run_id: str) -> None:
         self._cancelled.add(run_id)

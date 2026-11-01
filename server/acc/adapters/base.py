@@ -98,6 +98,7 @@ class RunRequest:
     tools: list[str] | None = None  # None = provider default, [] = no tools
     permission_mode: str | None = None
     model: str | None = None
+    settings: dict[str, Any] | None = None  # extra provider settings (e.g. sandbox policy)
 
 
 EventKind = Literal["text", "tool", "log", "usage", "result", "error"]

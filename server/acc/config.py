@@ -10,6 +10,12 @@ WEB_DIST = ROOT / "web" / "dist"
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("ACC_PORT", "7420"))
 
+# Isolated per-task git worktrees live here, never inside the user's project.
+WORKTREES_DIR = DATA_DIR / "worktrees"
+
+# How many tasks may execute at once. 1 keeps RAM and subscription quota predictable.
+MAX_PARALLEL_TASKS = 1
+
 # Demo adapter: fake responses for trying the UI without any CLI login.
 DEMO_MODE = os.environ.get("ACC_DEMO") == "1"
 

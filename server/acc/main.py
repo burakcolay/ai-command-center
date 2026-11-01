@@ -18,6 +18,7 @@ async def lifespan(_app: FastAPI):
     init_db()
     orchestrator.recover()
     yield
+    await orchestrator.shutdown()
 
 
 app = FastAPI(title="Orbit", lifespan=lifespan)

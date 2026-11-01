@@ -6,12 +6,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from acc import config, serialize
+from acc import config, gitops, serialize
 from acc.adapters import registry
 from acc.agents import AGENTS
 from acc.db import session
 from acc.models import Approval, ApprovalStatus, AuditLog, Chat, Message, Project, Task, TaskEvent
-from acc.orchestrator import Decision, InvalidTransition, Orchestrator
+from acc.orchestrator import Decision, ExecError, InvalidTransition, Orchestrator
 
 router = APIRouter(prefix="/api")
 orchestrator = Orchestrator(registry)
@@ -36,7 +36,7 @@ def list_projects():
 
 
 @router.post("/projects", status_code=201)
-def create_project(body: ProjectIn):
+async def create_project(body: ProjectIn):
     name = body.name.strip()
     if body.path:
         path = Path(body.path).expanduser().resolve()
@@ -47,7 +47,8 @@ def create_project(body: ProjectIn):
         if path.exists():
             raise HTTPException(409, f"Bu klasör zaten var: {path}")
         path.mkdir(parents=True)
-        subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=False)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
+        await gitops.initial_commit(path)  # worktrees need at least one commit
     with session() as s:
         if s.scalar(select(Project).where(Project.name == name)):
             raise HTTPException(409, "Bu isimde bir proje zaten var.")
@@ -115,7 +116,7 @@ def get_chat(chat_id: int):
         return {
             "chat": serialize.chat(c),
             "messages": [serialize.message(m) for m in msgs],
-            "tasks": [serialize.task(t) for t in tasks],
+            "tasks": [serialize.task_full(s, t) for t in tasks],
         }
 
 
@@ -151,7 +152,7 @@ async def post_message(chat_id: int, body: MessageIn):
         result = {
             "chat": serialize.chat(c),
             "messages": [serialize.message(user_msg), serialize.message(task_msg)],
-            "task": serialize.task(t),
+            "task": serialize.task_full(s, t),
         }
     orchestrator.start_planning(result["task"]["id"])
     return result
@@ -181,6 +182,16 @@ async def decide(task_id: int, body: DecisionIn):
     except LookupError:
         raise HTTPException(404) from None
     except InvalidTransition as e:
+        raise HTTPException(409, str(e)) from None
+
+
+@router.get("/tasks/{task_id}/diff")
+async def task_diff(task_id: int):
+    try:
+        return await orchestrator.diff(task_id)
+    except LookupError:
+        raise HTTPException(404) from None
+    except (ExecError, gitops.GitError) as e:
         raise HTTPException(409, str(e)) from None
 
 

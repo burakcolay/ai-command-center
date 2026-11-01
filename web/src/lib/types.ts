@@ -49,6 +49,38 @@ export interface Plan {
   risks: string[];
 }
 
+export type TaskStage = "plan" | "execute" | "merge" | "done";
+
+export interface TaskStepState {
+  id: number;
+  step_id: string;
+  seq: number;
+  title: string;
+  agent: string;
+  description: string;
+  kind: "plan" | "revision";
+  status: "pending" | "running" | "done" | "failed";
+  summary: string | null;
+  commit: string | null;
+  adapter_id: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface DiffFile {
+  path: string;
+  added: number;
+  removed: number;
+  binary: boolean;
+}
+
+export interface TaskDiff {
+  files: DiffFile[];
+  patch: string;
+  truncated: boolean;
+  branch: string;
+}
+
 export interface Task {
   id: number;
   chat_id: number;
@@ -59,6 +91,11 @@ export interface Task {
   plan: Plan | null;
   adapter_id: string | null;
   error: string | null;
+  stage: TaskStage;
+  branch: string | null;
+  base_branch: string | null;
+  merged_commit: string | null;
+  steps: TaskStepState[];
   created_at: string;
   updated_at: string;
 }
