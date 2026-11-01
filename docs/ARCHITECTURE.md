@@ -61,6 +61,11 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 - **Repodaki `.claude/settings.json` güvenilmez veridir.** Claude Code `--setting-sources user` ile başlatılır; böylece bir repo kendi hook'larıyla komut çalıştıramaz.
 - Proje dosyaları, web sayfaları ve skill'ler güvenilmeyen veri sayılır. Planlayıcı sistem prompt'u bunu belirtir. Daha önemlisi, izinler zaten koddadır; prompt değiştirse bile araç listesi değişmez.
 - Bir proje uygulamadan kaldırıldığında diskteki dosyalar silinmez.
+- **Gizli dosyalar** (`security.SECRET_FILE_GLOBS`): Her Claude çalıştırmasına `permissions.deny` olarak `Read(**/.env)`, `Read(**/*.p8)` gibi kurallar verilir. Claude Code bu kuralları sandbox içindeki shell komutlarına da uygular; doğrulandı: `cat .env` reddedildi, `.env.example` okunabiliyor.
+- **Kimlik bilgisi klasörleri** (`security.CREDENTIAL_DIRS`) ve ORBIT'in kendi veritabanı sandbox'taki her komuttan gizlidir.
+- **CSRF:** Tarayıcının `Origin` ya da `Sec-Fetch-Site: cross-site` başlığıyla işaretlediği yabancı istekler 403 alır.
+- **Log maskeleme:** Görev olayları, adım özetleri, audit kayıtları ve kontrol çıktıları kaydedilmeden önce `security.redact`'tan geçer.
+- **Alt süreç ortamı:** Faturalama anahtarları ve ORBIT'in kendi Python sanal ortamı (`VIRTUAL_ENV`, `PATH` girdisi) alt süreçlere aktarılmaz. Böylece ajanın `python`'u projenin Python'u olur.
 
 ## 4. Adaptör sözleşmesi
 
@@ -84,7 +89,22 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 - `result.structured_output` alanı `--json-schema` ile doğrulanmış çıktıyı içerir.
 - `result.total_cost_usd` abonelikte temsili bir değerdir; harcama olarak gösterilmez.
 
-## 5. Sohbet ve görev modları
+## 5. Kalite kapıları, kota ve bildirimler
+
+- **Kalite kapıları** (`checks.py`): Adımlar bittikten sonra projenin komutları ORBIT tarafından `sandbox-runtime` (`tools/`) içinde çalıştırılır.
+  - Sandbox kuralları: yazma yalnızca worktree'ye; `TMPDIR` worktree içinde; ağ yalnızca npm/PyPI; araç önbellekleri `.orbit-cache`'te.
+  - `srt` yoksa komutlar "atlandı" olarak işaretlenir, korumasız çalıştırılmaz.
+  - Ajanın değiştirdiği bir test betiği güvenilmez koddur; bu yüzden sandbox şarttır.
+  - Sonuç `tasks.checks`'e yazılır. `fix_checks` kararı hata çıktısıyla bir düzeltme adımı ekler ("testleri silme/atlama" kuralıyla); `rerun_checks` yalnızca kontrolleri tekrarlar.
+  - Not: `srt`'nin kendi soketleri sistemin geçici klasöründe kalır. Unix soket yolu ~104 karakterle sınırlı olduğundan `TMPDIR` yalnızca sandbox içindeki komuta verilir.
+- **Kota** (`QuotaExceeded`):
+  - `rate_limit_event.status == "rejected"` olunca görev `paused` olur; `resume_at` sıfırlanma + 1 dk'dır.
+  - Zamanlayıcı görevi kaldığı adımdan sürdürür; sunucu yeniden başlarsa zamanlayıcı yeniden kurulur.
+  - `allowed_warning` yalnızca günlüğe uyarı düşer. Ücretli geçiş yoktur.
+- **Bildirimler** (`notify.py`): macOS'ta `osascript`. Başlık ve gövde AppleScript koduna gömülmez, argüman olarak verilir; böylece bir görev başlığı komut enjekte edemez.
+- **Şablonlar** (`templates.py` + `templates` tablosu): Hazır istekler kodda, kullanıcı şablonları veritabanında.
+
+## 6. Sohbet ve görev modları
 
 Kullanıcı ORBIT'e iki şekilde yazar:
 
@@ -110,15 +130,15 @@ Kullanıcı ORBIT'e iki şekilde yazar:
 - **Karar Günlüğü:** Her birleştirmede görev numarası, başlık, plan özetinin ilk cümlesi, değişen dosyalar ve commit otomatik eklenir. Ek model çağrısı yapılmaz.
 - **Obsidian:** Zorunlu değil. Dosyalar düz markdown olduğu için `MEMORY_DIR` bir Obsidian kasasının içini gösterebilir; eklenti veya API gerekmez. Operasyonel durum SQLite'ta kalır, kalıcı bilgi markdown'dadır.
 
-## 6. Veri modeli (SQLite)
+## 7. Veri modeli (SQLite)
 
-`projects`, `chats` (kayan özet dahil), `messages`, `tasks`, `task_steps`, `preferences` (yürütme adımları ve özetleri), `task_events` (yalnızca ekleme yapılan günlük ve canlı akış), `approvals`, `audit_logs`.
+`projects` (kontrol ayarı dahil), `chats` (kayan özet dahil), `messages`, `tasks`, `task_steps`, `preferences` (yürütme adımları ve özetleri), `task_events` (yalnızca ekleme yapılan günlük ve canlı akış), `approvals`, `audit_logs`, `templates`.
 
 **Şema geçişi:** `db._add_missing_columns` yalnızca ekleme yapar; yeni sütunları mevcut veritabanına `ALTER TABLE ADD COLUMN` ile ekler. Eski veritabanları sürüm güncellemelerinde bozulmaz.
 
 Dokümandaki diğer tablolar (`model_usage`, `skill_registry`, `mcp_connections` …) ilgili faz geldiğinde eklenecek.
 
-## 7. Görev yaşam döngüsü
+## 8. Görev yaşam döngüsü
 
 Görevin bir `stage` alanı (plan → execute → merge → done) ve bir `status` alanı vardır:
 
@@ -138,7 +158,7 @@ Her aktif durumdan cancel ──► cancelled
 - **Kaldığı yerden devam:** Her adım ayrı bir commit olduğu için checkpoint görevi görür. Sunucu yeniden başlarsa kuyruktaki görevler devam eder; yarıda kalanlar "Kaldığı yerden devam et" ile tamamlanmamış adımdan sürdürülür.
 - **Eşzamanlılık:** Aynı anda en fazla `MAX_PARALLEL_TASKS = 1` görev yürütülür. Bu, RAM ve abonelik kotası için bilinçli bir seçim.
 
-## 8. Yol haritası durumu
+## 9. Yol haritası durumu
 
 - [x] **Faz 1 — Temel:** iskelet, SQLite, sohbet, projeler, loglar, WebSocket
 - [x] **Adaptör arayüzü + Claude Code adaptörü + maliyet koruması**
@@ -149,6 +169,11 @@ Her aktif durumdan cancel ──► cancelled
 - [x] **Ollama adaptörü:** sohbet ve özetleme; dosya araçları yok, ajan adımlarına asla atanmaz
 - [x] **Uzun sohbet özetleme** (önce yerel model)
 - [ ] **Codex adaptörü:** ChatGPT aboneliği alındığında; CLI davranışı o zaman gerçek hesapla doğrulanacak
-- [ ] **Sıradaki — Kalite kapıları (Faz 6):** birleştirmeden önce projenin kendi test ve lint komutlarını ORBIT'in kendisi çalıştırır; sonuç diff'in yanında gösterilir (AI'nın "testler geçti" demesine güvenilmez)
+- [x] **Kalite kapıları** (sandbox'ta, ORBIT'in kendisi çalıştırır)
+- [x] **Kota dolunca otomatik bekleme ve devam**
+- [x] **macOS bildirimleri**
+- [x] **Şablonlar** (hazır ve kullanıcı)
+- [x] **Güvenlik sertleştirmesi:** CSRF, gizli dosya erişimi, log maskeleme, özel veri klasörü, temiz alt süreç ortamı
+- [ ] **Sıradaki adaylar:** GitHub entegrasyonu (Faz 4: branch, PR hazırlama — push/merge onaylı); web projeleri için görsel önizleme
 - [ ] Grok Build adaptörü (ücretsiz erişim doğrulanırsa)
 - [ ] Faz 4–8: dokümandaki sırayla

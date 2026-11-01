@@ -9,15 +9,16 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import func, select
 
-from acc import config, gitops, memory, serialize
+from acc import checks, config, gitops, memory, notify, security, serialize
 from acc.adapters import Registry
-from acc.adapters.base import AdapterError, RunRequest
+from acc.adapters.base import AdapterError, QuotaExceeded, RunRequest
 from acc.agents import AGENTS, PLANNABLE, step_system_prompt
 from acc.db import session
 from acc.events import broker
@@ -37,6 +38,8 @@ from acc.models import (
 from acc.models import utcnow as _now
 
 TERMINAL = {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
+RESUME_MARGIN = timedelta(minutes=1)  # wait a little past the quota reset before resuming
+UNKNOWN_RESET_WAIT = timedelta(minutes=30)
 CONTEXT_FOR_STEPS = 60_000  # chars of conversation each agent step sees
 
 PLAN_SCHEMA: dict[str, Any] = {
@@ -83,6 +86,8 @@ class Decision(StrEnum):
     REQUEST_CHANGES = "request_changes"
     CANCEL = "cancel"
     RETRY = "retry"
+    FIX_CHECKS = "fix_checks"  # failed quality gates -> revision step with their output
+    RERUN_CHECKS = "rerun_checks"  # run the quality gates again, no agent involved
 
 
 class InvalidTransition(Exception):
@@ -104,7 +109,7 @@ class Orchestrator:
 
     def _event(self, task_id: int, kind: str, data: dict[str, Any]) -> None:
         with session() as s:
-            ev = TaskEvent(task_id=task_id, kind=kind, data=data)
+            ev = TaskEvent(task_id=task_id, kind=kind, data=security.redact_data(data))
             s.add(ev)
             s.flush()
             payload = serialize.event(ev)
@@ -142,7 +147,11 @@ class Orchestrator:
     @staticmethod
     def _audit(actor: str, action: str, target: str, data: dict[str, Any] | None = None) -> None:
         with session() as s:
-            s.add(AuditLog(actor=actor, action=action, target=target, data=data or {}))
+            s.add(
+                AuditLog(
+                    actor=actor, action=action, target=target, data=security.redact_data(data or {})
+                )
+            )
 
     def _spawn(self, coro) -> None:
         job = asyncio.create_task(coro)
@@ -154,6 +163,51 @@ class Orchestrator:
             return  # the user's cancel wins over the error it caused
         self._update(task_id, status=TaskStatus.FAILED, error=reason)
         self._event(task_id, "error", {"text": reason})
+        notify.send("Görev başarısız", f"#{task_id} · {reason[:160]}")
+
+    # ---------- quota pause ----------
+
+    def _pause(self, task_id: int, resets_at: int | None) -> None:
+        """Subscription quota used up: wait for the reset instead of failing (never go paid)."""
+        if self._status(task_id) == TaskStatus.CANCELLED:
+            return
+        resume = (
+            datetime.fromtimestamp(resets_at, UTC) + RESUME_MARGIN
+            if resets_at
+            else datetime.now(UTC) + UNKNOWN_RESET_WAIT
+        )
+        self._update(task_id, status=TaskStatus.PAUSED, resume_at=resume, error=None)
+        at = resume.astimezone().strftime("%H:%M")
+        self._log(task_id, f"Claude kotası doldu. {at} civarında otomatik devam edecek.")
+        notify.send("Kota doldu, görev bekliyor", f"#{task_id} {at} civarında devam edecek.")
+        self._schedule_resume(task_id, resume)
+
+    def _schedule_resume(self, task_id: int, at: datetime) -> None:
+        async def later() -> None:
+            await asyncio.sleep(max(0.0, (at - datetime.now(UTC)).total_seconds()))
+            if self._status(task_id) == TaskStatus.PAUSED:
+                self._resume(task_id)
+
+        self._spawn(later())
+
+    def _resume(self, task_id: int) -> dict[str, Any]:
+        with session() as s:
+            stage = s.get(Task, task_id).stage
+            if stage != TaskStage.PLAN:
+                for st in s.scalars(
+                    select(TaskStep).where(
+                        TaskStep.task_id == task_id, TaskStep.status != StepStatus.DONE
+                    )
+                ):
+                    st.status = StepStatus.PENDING
+        self._log(task_id, "Devam ediliyor.")
+        if stage == TaskStage.PLAN:
+            payload = self._update(task_id, status=TaskStatus.PLANNING, resume_at=None)
+            self.start_planning(task_id)
+        else:
+            payload = self._update(task_id, status=TaskStatus.QUEUED, resume_at=None)
+            self.start_execution(task_id)
+        return payload
 
     async def _run_adapter(
         self, task_id: int, adapter_ids: list[str], req: RunRequest, tag: dict[str, Any]
@@ -219,6 +273,9 @@ class Orchestrator:
         )
         try:
             adapter_id, result = await self._run_adapter(task_id, agent.adapters, req, {})
+        except QuotaExceeded as e:
+            self._pause(task_id, e.resets_at)
+            return
         except (AdapterError, ExecError) as e:
             self._fail(task_id, str(e))
             return
@@ -244,6 +301,7 @@ class Orchestrator:
         )
         self._log(task_id, "Plan hazır, onay bekleniyor.")
         broker.publish({"type": "approvals_changed"})
+        notify.send("Plan hazır", plan["title"][:120])
 
     # ---------- execution ----------
 
@@ -258,7 +316,10 @@ class Orchestrator:
             try:
                 root, wt, cwd = await self._prepare_workspace(task_id)
                 await self._run_steps(task_id, wt, cwd)
+                await self._run_checks(task_id, wt, cwd)
                 await self._finish_execution(task_id, root, wt)
+            except QuotaExceeded as e:
+                self._pause(task_id, e.resets_at)
             except (AdapterError, ExecError, GitError) as e:
                 self._fail(task_id, str(e))
             except Exception as e:
@@ -372,11 +433,30 @@ class Orchestrator:
             step_pk,
             task_id,
             status=StepStatus.DONE,
-            summary=(result.get("text") or "")[:4000],
+            summary=security.redact(result.get("text") or "")[:4000],
             commit=commit,
             adapter_id=adapter_id,
             finished_at=_now(),
         )
+
+    async def _run_checks(self, task_id: int, wt: Path, cwd: Path) -> None:
+        """Quality gates: the project's own commands, run by Orbit in the sandbox."""
+        if self._status(task_id) != TaskStatus.RUNNING:
+            return
+        with session() as s:
+            t = s.get(Task, task_id)
+            configured = s.get(Project, t.project_id).checks
+        cfg = checks.effective(configured, cwd)
+        if not cfg["commands"]:
+            self._update(task_id, checks=[])
+            self._log(task_id, "Tanımlı kalite kontrolü yok; atlandı.")
+            return
+        names = ", ".join(c["name"] for c in cfg["commands"])
+        self._log(task_id, f"Kalite kontrolleri çalışıyor (sandbox): {names}")
+        results = await checks.run(cfg, wt, cwd, task_id)
+        await gitops.discard(wt)  # checks never leave changes behind
+        self._update(task_id, checks=results)
+        self._log(task_id, f"Kalite kontrolleri: {checks.summary(results)}")
 
     async def _finish_execution(self, task_id: int, root: Path, wt: Path) -> None:
         if self._status(task_id) != TaskStatus.RUNNING:
@@ -399,6 +479,12 @@ class Orchestrator:
             f"{len(d['files'])} dosya değişti (+{added} −{removed}). İncelemeniz bekleniyor.",
         )
         broker.publish({"type": "approvals_changed"})
+        with session() as s:
+            results = s.get(Task, task_id).checks or []
+        notify.send(
+            "İncelemeye hazır",
+            f"#{task_id} · {len(d['files'])} dosya · kontroller: {checks.summary(results)}",
+        )
 
     async def _cleanup(self, task_id: int, merged: bool) -> None:
         """Remove the task worktree and its branch. Never touches the user's working tree."""
@@ -467,12 +553,22 @@ class Orchestrator:
             Decision.REJECT: status == TaskStatus.WAITING_APPROVAL,
             Decision.REQUEST_CHANGES: status == TaskStatus.WAITING_APPROVAL,
             Decision.CANCEL: status not in TERMINAL,
-            Decision.RETRY: status == TaskStatus.FAILED,
+            Decision.RETRY: status in (TaskStatus.FAILED, TaskStatus.PAUSED),
+            Decision.FIX_CHECKS: status == TaskStatus.WAITING_APPROVAL and stage == TaskStage.MERGE,
+            Decision.RERUN_CHECKS: status == TaskStatus.WAITING_APPROVAL
+            and stage == TaskStage.MERGE,
         }[decision]
         if not allowed:
             raise InvalidTransition(f"'{status}' durumundaki görev için '{decision}' yapılamaz.")
         if decision == Decision.REQUEST_CHANGES and not (note and note.strip()):
             raise InvalidTransition("Değişiklik talebi için not gerekli.")
+        if decision == Decision.FIX_CHECKS:
+            with session() as s:
+                results = s.get(Task, task_id).checks or []
+            if not any(r["status"] == "failed" for r in results):
+                raise InvalidTransition("Başarısız kalite kontrolü yok.")
+            note = checks.failure_note(results)
+            decision = Decision.REQUEST_CHANGES
 
         merged_commit = None
         if decision == Decision.APPROVE and stage == TaskStage.MERGE:
@@ -488,6 +584,8 @@ class Orchestrator:
             Decision.REQUEST_CHANGES: ApprovalStatus.CHANGES_REQUESTED,
             Decision.CANCEL: ApprovalStatus.CANCELLED,
             Decision.RETRY: None,
+            Decision.FIX_CHECKS: None,
+            Decision.RERUN_CHECKS: ApprovalStatus.CANCELLED,  # a fresh review follows
         }[decision]
         if approval_status:
             with session() as s:
@@ -553,6 +651,16 @@ class Orchestrator:
             self.start_execution(task_id)
             return payload
 
+        if decision == Decision.RERUN_CHECKS:
+            # All steps are done, so execution goes straight to the checks and back to review.
+            self._log(task_id, "Kalite kontrolleri yeniden çalıştırılıyor.")
+            payload = self._update(task_id, status=TaskStatus.QUEUED, stage=TaskStage.EXECUTE)
+            self.start_execution(task_id)
+            return payload
+
+        if decision == Decision.RETRY and status == TaskStatus.PAUSED:
+            return self._resume(task_id)
+
         if decision == Decision.RETRY and stage == TaskStage.EXECUTE:
             with session() as s:
                 for st in s.scalars(
@@ -578,12 +686,22 @@ class Orchestrator:
         """Called at startup. Queued work resumes; interrupted work becomes retryable."""
         with session() as s:
             tasks = s.execute(
-                select(Task.id, Task.status, Task.stage).where(
-                    Task.status.in_([TaskStatus.PLANNING, TaskStatus.RUNNING, TaskStatus.QUEUED])
+                select(Task.id, Task.status, Task.stage, Task.resume_at).where(
+                    Task.status.in_(
+                        [
+                            TaskStatus.PLANNING,
+                            TaskStatus.RUNNING,
+                            TaskStatus.QUEUED,
+                            TaskStatus.PAUSED,
+                        ]
+                    )
                 )
             ).all()
-        for task_id, status, stage in tasks:
-            if status == TaskStatus.QUEUED and stage == TaskStage.EXECUTE:
+        for task_id, status, stage, resume_at in tasks:
+            if status == TaskStatus.PAUSED:
+                at = resume_at or datetime.now(UTC)
+                self._schedule_resume(task_id, at if at.tzinfo else at.replace(tzinfo=UTC))
+            elif status == TaskStatus.QUEUED and stage == TaskStage.EXECUTE:
                 self.start_execution(task_id)
             elif status == TaskStatus.QUEUED:
                 # Approved before the execution engine existed: ask again instead of

@@ -3,9 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { toolTarget } from "../lib/format";
 import { AGENT_LABEL, STATUS_LABEL } from "../lib/labels";
-import type { Decision, Task, TaskEvent, TaskStepState } from "../lib/types";
+import type { Decision, Task, TaskEvent, TaskStatus, TaskStepState } from "../lib/types";
+import { ChecksPanel } from "./ChecksPanel";
 import { DiffView } from "./DiffView";
 import { StatusDot } from "./StatusDot";
+
+const CANCELLABLE = new Set<TaskStatus>(["planning", "queued", "running", "paused"]);
 
 interface Props {
   task: Task;
@@ -42,8 +45,13 @@ export function TaskCard({ task, events, onLoadEvents, onError }: Props) {
   const plan = task.plan;
   const lastLine = events?.filter((e) => e.kind !== "usage").at(-1);
   const doneSteps = task.steps.filter((s) => s.status === "done").length;
+  const resumeAt = task.resume_at
+    ? new Date(task.resume_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })
+    : null;
   const statusLabel = review
     ? "İnceleme bekliyor"
+    : task.status === "paused" && resumeAt
+      ? `Kota bekleniyor · ${resumeAt}'de devam`
     : task.status === "running" && task.steps.length
       ? `Çalışıyor · ${Math.min(doneSteps + 1, task.steps.length)}/${task.steps.length}`
       : STATUS_LABEL[task.status];
@@ -102,6 +110,24 @@ export function TaskCard({ task, events, onLoadEvents, onError }: Props) {
         {task.status === "running" && (
           <div className="mt-3">
             <LiveLine text={lineText(lastLine) || "Ajan çalışıyor"} />
+          </div>
+        )}
+
+        {task.status === "paused" && (
+          <p className="mt-3 text-[13px] leading-relaxed text-dim">
+            Claude abonelik kotası doldu. Görev{resumeAt ? ` ${resumeAt} civarında` : ""} kaldığı
+            yerden kendiliğinden devam edecek; ücretli kullanıma geçilmez.
+          </p>
+        )}
+
+        {(review || task.status === "completed") && task.checks && task.checks.length > 0 && (
+          <div className="mt-4">
+            <ChecksPanel
+              results={task.checks}
+              busy={busy}
+              onFix={review ? () => decide("fix_checks") : undefined}
+              onRerun={review ? () => decide("rerun_checks") : undefined}
+            />
           </div>
         )}
 
@@ -169,7 +195,12 @@ export function TaskCard({ task, events, onLoadEvents, onError }: Props) {
                 </Btn>
               </>
             ))}
-          {(task.status === "planning" || task.status === "queued" || task.status === "running") && (
+          {task.status === "paused" && (
+            <Btn primary disabled={busy} onClick={() => decide("retry")}>
+              Şimdi dene
+            </Btn>
+          )}
+          {CANCELLABLE.has(task.status) && (
             <Btn disabled={busy} onClick={() => decide("cancel")}>
               İptal
             </Btn>

@@ -50,6 +50,8 @@ class Project(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120), unique=True)
     path: Mapped[str] = mapped_column(Text)
+    # Quality gates: {"setup": str|None, "commands": [{"name", "command"}]}; None = auto-detect
+    checks: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -84,6 +86,10 @@ class Task(Base):
     base_commit: Mapped[str | None] = mapped_column(String(64))
     worktree: Mapped[str | None] = mapped_column(Text)
     merged_commit: Mapped[str | None] = mapped_column(String(64))
+    # Results of the last quality-gate run (list of {name, command, status, exit_code, ...}).
+    checks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
+    # Paused for subscription quota: resumes automatically at this time.
+    resume_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -161,3 +167,14 @@ class Preference(Base):
     __tablename__ = "preferences"
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[Any] = mapped_column(JSON)
+
+
+class Template(Base):
+    """A reusable request the user saved (built-in templates live in code)."""
+
+    __tablename__ = "templates"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(80))
+    body: Mapped[str] = mapped_column(Text)
+    mode: Mapped[str] = mapped_column(String(8), default="task")  # chat | task
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

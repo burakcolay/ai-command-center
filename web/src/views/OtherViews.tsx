@@ -1,7 +1,9 @@
 import { Lock, ShieldCheck } from "lucide-react";
+import { useState } from "react";
+import { api } from "../lib/api";
 import { StatusPill } from "../components/StatusDot";
 import type { NavItem } from "../lib/nav";
-import type { Agent, Approval } from "../lib/types";
+import type { Agent, Approval, SystemInfo } from "../lib/types";
 import { Empty, Page } from "./Page";
 
 export function AgentsView({ agents }: { agents: Agent[] }) {
@@ -69,23 +71,72 @@ export function ApprovalsView({
   );
 }
 
-export function SettingsView({ demoMode }: { demoMode: boolean }) {
+export function SettingsView({
+  system,
+  onToggleNotifications,
+  onError,
+}: {
+  system: SystemInfo | null;
+  onToggleNotifications: (on: boolean) => void;
+  onError: (msg: string) => void;
+}) {
+  const [tested, setTested] = useState<string | null>(null);
+  const test = async () => {
+    try {
+      const r = await api.testNotification();
+      setTested(r.sent ? "Gönderildi — ekranın sağ üstüne bak." : "Bu sistemde desteklenmiyor.");
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
   return (
-    <Page title="Ayarlar" subtitle="Güvenlik ve maliyet politikası. Bu kurallar arayüzden değiştirilemez.">
+    <Page title="Ayarlar">
+      <div className="label mb-2">Bildirimler</div>
+      <div className="mb-8 overflow-hidden rounded-xl border border-line bg-panel px-4 py-3">
+        {system?.notifications_supported ? (
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex flex-1 cursor-pointer items-center gap-3 text-[13.5px] text-fg">
+              <input
+                type="checkbox"
+                checked={system.notifications}
+                onChange={(e) => onToggleNotifications(e.target.checked)}
+                className="size-4 accent-white"
+              />
+              Plan hazır, incelemeye hazır, kota doldu veya görev başarısız olduğunda macOS bildirimi gönder
+            </label>
+            <button
+              onClick={() => void test()}
+              className="rounded-lg border border-line-strong px-3 py-1 text-[12.5px] hover:border-white/40"
+            >
+              Test bildirimi
+            </button>
+            {tested && <span className="w-full font-mono text-[11px] text-dim">{tested}</span>}
+          </div>
+        ) : (
+          <p className="text-[13px] text-dim">Bildirimler yalnızca macOS'ta çalışır.</p>
+        )}
+      </div>
+
+      <div className="label mb-2">Güvenlik ve maliyet · arayüzden değiştirilemez</div>
       <div className="space-y-px overflow-hidden rounded-xl border border-line">
         {[
-          ["Ücretli API kullanımı", "Kapalı — kodda sabit. API anahtarı ortam değişkenleri alt süreçlere aktarılmaz."],
-          ["Abonelik doğrulaması", "Claude Code her çalıştırmada abonelik girişini doğrular; API anahtarı algılanırsa durur."],
-          ["Ücretli aşım (extra usage)", "Algılanırsa çalıştırma durdurulur. claude.ai ve ChatGPT ayarlarında kapalı tutun."],
-          ["Ağ erişimi", "Sunucu yalnızca 127.0.0.1 üzerinde dinler; farklı host başlıkları reddedilir."],
-          ["Demo modu", demoMode ? "Açık (ACC_DEMO=1)" : "Kapalı"],
+          ["Ücretli API", "Kapalı — kodda sabit. API anahtarları alt süreçlere aktarılmaz."],
+          ["Abonelik doğrulaması", "Her çalıştırmada; API anahtarı veya ücretli aşım algılanırsa durur."],
+          ["Kota dolduğunda", "Görev bekler ve sıfırlanınca kendiliğinden devam eder; ücretliye geçilmez."],
+          ["Gizli dosyalar", ".env, anahtar ve sertifika dosyalarını ajanlar okuyamaz."],
+          ["Sandbox", "Komut çalıştıran ajanlar ve kalite kontrolleri yalnızca görevin kopyasına yazabilir."],
+          ["Kalite kontrolleri", system?.sandbox_for_checks ? "Sandbox hazır" : "Sandbox kurulu değil — make setup"],
+          ["Ağ", "Yalnızca 127.0.0.1; başka sitelerden gelen istekler reddedilir."],
+          ["Loglar", "Token ve şifre benzeri değerler kaydedilmeden önce maskelenir."],
+          ["Proje hafızası", system?.memory_dir ?? "…"],
+          ["Demo modu", system?.demo_mode ? "Açık (ACC_DEMO=1)" : "Kapalı"],
         ].map(([k, v]) => (
           <div key={k} className="flex flex-col gap-1 bg-panel px-4 py-3 md:flex-row md:items-center md:gap-6">
-            <div className="flex w-56 shrink-0 items-center gap-2 text-[13.5px] text-fg">
+            <div className="flex w-48 shrink-0 items-center gap-2 text-[13.5px] text-fg">
               <Lock size={12} className="text-faint" />
               {k}
             </div>
-            <div className="text-[13px] text-dim">{v}</div>
+            <div className="min-w-0 break-words text-[13px] text-dim">{v}</div>
           </div>
         ))}
       </div>

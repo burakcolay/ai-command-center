@@ -7,12 +7,22 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from acc import config, gitops, memory, prefs, serialize
+from acc import checks, config, gitops, memory, notify, prefs, serialize, templates
 from acc.adapters import registry
 from acc.agents import AGENTS
 from acc.chat import ChatService, context_for_task
 from acc.db import session
-from acc.models import Approval, ApprovalStatus, AuditLog, Chat, Message, Project, Task, TaskEvent
+from acc.models import (
+    Approval,
+    ApprovalStatus,
+    AuditLog,
+    Chat,
+    Message,
+    Project,
+    Task,
+    TaskEvent,
+    Template,
+)
 from acc.orchestrator import Decision, ExecError, InvalidTransition, Orchestrator
 
 router = APIRouter(prefix="/api")
@@ -94,6 +104,58 @@ def put_memory(project_id: int, body: MemoryIn):
     with session() as s:
         s.add(AuditLog(actor="user", action="memory.update", target=f"project:{project_id}"))
     return {"path": str(path), "content": memory.read(name)}
+
+
+class CheckCommand(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    command: str = Field(min_length=1, max_length=1000)
+
+
+class ChecksConfig(BaseModel):
+    setup: str | None = Field(default=None, max_length=1000)
+    commands: list[CheckCommand] = Field(default_factory=list, max_length=20)
+
+
+class ChecksIn(BaseModel):
+    config: ChecksConfig | None = None  # None = back to auto-detection
+
+
+@router.get("/projects/{project_id}/checks")
+def get_checks(project_id: int):
+    with session() as s:
+        p = s.get(Project, project_id)
+        if p is None:
+            raise HTTPException(404)
+        path, configured = Path(p.path), p.checks
+    detected = checks.detect(path) if path.is_dir() else {"setup": None, "commands": []}
+    return {
+        "configured": configured,
+        "detected": detected,
+        "effective": configured if configured is not None else detected,
+        "sandbox": checks.sandbox_available(),
+    }
+
+
+@router.put("/projects/{project_id}/checks")
+def put_checks(project_id: int, body: ChecksIn):
+    cfg = None
+    if body.config is not None:
+        cfg = body.config.model_dump()
+        cfg["setup"] = (cfg["setup"] or "").strip() or None
+    with session() as s:
+        p = s.get(Project, project_id)
+        if p is None:
+            raise HTTPException(404)
+        p.checks = cfg
+        s.add(
+            AuditLog(
+                actor="user",
+                action="checks.update",
+                target=f"project:{project_id}",
+                data={"config": cfg},
+            )
+        )
+    return get_checks(project_id)
 
 
 @router.delete("/projects/{project_id}", status_code=204)
@@ -316,7 +378,7 @@ def list_agents():
 
 
 class PrefIn(BaseModel):
-    value: str | int | bool | None
+    value: bool | int | str | None
 
 
 @router.put("/preferences/{key}")
@@ -330,6 +392,61 @@ def put_preference(key: str, body: PrefIn):
     return {"key": key, "value": body.value}
 
 
+class TemplateIn(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
+    body: str = Field(min_length=1, max_length=20_000)
+    mode: Literal["chat", "task"] = "task"
+
+
+@router.get("/templates")
+def list_templates():
+    with session() as s:
+        custom = [
+            {
+                "id": f"u-{t.id}",
+                "title": t.title,
+                "body": t.body,
+                "mode": t.mode,
+                "description": "Kayıtlı şablon",
+                "custom": True,
+            }
+            for t in s.scalars(select(Template).order_by(Template.id.desc()))
+        ]
+    return custom + [{**t, "custom": False} for t in templates.BUILTIN]
+
+
+@router.post("/templates", status_code=201)
+def create_template(body: TemplateIn):
+    with session() as s:
+        t = Template(title=body.title.strip(), body=body.body, mode=body.mode)
+        s.add(t)
+        s.flush()
+        return {"id": f"u-{t.id}"}
+
+
+@router.delete("/templates/{template_id}", status_code=204)
+def delete_template(template_id: str):
+    if not template_id.startswith("u-") or not template_id[2:].isdigit():
+        raise HTTPException(400, "Hazır şablonlar silinemez.")
+    with session() as s:
+        t = s.get(Template, int(template_id[2:]))
+        if t is None:
+            raise HTTPException(404)
+        s.delete(t)
+
+
+@router.post("/notify/test")
+async def test_notification():
+    return {"sent": notify.send("Orbit", "Bildirimler çalışıyor.", force=True)}
+
+
 @router.get("/system")
 def system_info():
-    return {"demo_mode": config.DEMO_MODE, "paid_api_allowed": config.ALLOW_PAID_API}
+    return {
+        "demo_mode": config.DEMO_MODE,
+        "paid_api_allowed": config.ALLOW_PAID_API,
+        "notifications": prefs.get("notifications", True) is not False,
+        "notifications_supported": notify.supported(),
+        "sandbox_for_checks": checks.sandbox_available(),
+        "memory_dir": str(config.MEMORY_DIR),
+    }

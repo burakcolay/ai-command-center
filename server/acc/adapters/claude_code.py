@@ -16,6 +16,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
+from acc import security
 from acc.adapters.base import (
     AdapterError,
     AdapterEvent,
@@ -25,6 +26,7 @@ from acc.adapters.base import (
     Health,
     ModelAdapter,
     ModelState,
+    QuotaExceeded,
     RunRequest,
     Usage,
     UsageWindow,
@@ -100,10 +102,26 @@ class ClaudeCodeAdapter(ModelAdapter):
                 f"Abonelik dışı kimlik doğrulama algılandı ({method}/{provider}). "
                 "Ücretli API'ye geçmemek için kullanım engellendi.",
             )
-        usage = self._last_usage
-        if usage and any(w.status not in (None, "allowed") for w in usage.windows):
-            return Health(ModelState.COOLDOWN, "Abonelik limitine ulaşıldı.", {"auth": method})
+        if (resets := self._blocked_until()) is not None:
+            return Health(
+                ModelState.COOLDOWN,
+                str(QuotaExceeded(resets)),
+                {"auth": method, "resets_at": resets},
+            )
         return Health(ModelState.AVAILABLE, "Abonelik ile giriş yapıldı.", {"auth": method})
+
+    def _blocked_until(self) -> int | None:
+        """Reset time of a used-up window that hasn't reset yet, from the last real reading."""
+        usage = self._last_usage
+        if not usage:
+            return None
+        now = time.time()
+        blocked = [
+            w.resets_at
+            for w in usage.windows
+            if w.status == "rejected" and w.resets_at and w.resets_at > now
+        ]
+        return min(blocked) if blocked else None
 
     async def usage_status(self) -> Usage:
         return self._last_usage or Usage(
@@ -115,8 +133,11 @@ class ClaudeCodeAdapter(ModelAdapter):
         # Project-level .claude/settings.json inside a repo is untrusted (it can define hooks
         # that run commands). Only the user's own settings plus ours are loaded.
         args += ["--setting-sources", "user"]
-        if req.settings:
-            args += ["--settings", json.dumps(req.settings)]
+        # Secret-file deny rules always apply; agent settings (e.g. sandbox) are added on top.
+        args += [
+            "--settings",
+            json.dumps({**security.claude_base_settings(), **(req.settings or {})}),
+        ]
         if req.tools is not None:
             args += ["--tools", ",".join(req.tools)]
             if req.tools:
@@ -135,6 +156,8 @@ class ClaudeCodeAdapter(ModelAdapter):
 
     async def run(self, req: RunRequest, run_id: str) -> AsyncIterator[AdapterEvent]:
         health = await self.health_check()
+        if health.state == ModelState.COOLDOWN:
+            raise QuotaExceeded(health.data.get("resets_at"))
         if health.state != ModelState.AVAILABLE:
             raise AdapterError(health.detail)
 
@@ -202,7 +225,16 @@ class ClaudeCodeAdapter(ModelAdapter):
                 windows=windows,
                 observed_at=int(time.time()),
             )
-            return [AdapterEvent("usage", {"windows": [w.__dict__ for w in windows]})]
+            status = info.get("status")
+            if status == "rejected":
+                raise QuotaExceeded(info.get("resetsAt") or self._blocked_until())
+            events = [AdapterEvent("usage", {"windows": [w.__dict__ for w in windows]})]
+            if status == "allowed_warning":
+                used = max((w.utilization or 0 for w in windows), default=0)
+                events.append(
+                    AdapterEvent("log", {"text": f"Kota uyarısı: %{round(used * 100)} kullanıldı."})
+                )
+            return events
         if t == "stream_event":
             ev = msg.get("event") or {}
             delta = ev.get("delta") or {}
@@ -224,6 +256,8 @@ class ClaudeCodeAdapter(ModelAdapter):
         if t == "result":
             if msg.get("is_error"):
                 text = str(msg.get("result") or msg.get("subtype"))
+                if "limit" in text.lower() and (resets := self._blocked_until()):
+                    raise QuotaExceeded(resets)
                 return [AdapterEvent("error", {"text": text})]
             return [
                 AdapterEvent(

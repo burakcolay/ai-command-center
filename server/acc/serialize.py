@@ -1,3 +1,4 @@
+from datetime import UTC
 from typing import Any
 
 from sqlalchemy import select
@@ -7,11 +8,21 @@ from acc.models import Approval, Chat, Message, Project, Task, TaskEvent, TaskSt
 
 
 def _ts(dt) -> str | None:
-    return dt.isoformat() if dt else None
+    """SQLite hands datetimes back without a zone; they are stored as UTC, so say so —
+    otherwise the browser reads them as local time and shows them hours off."""
+    if dt is None:
+        return None
+    return (dt if dt.tzinfo else dt.replace(tzinfo=UTC)).isoformat()
 
 
 def project(p: Project) -> dict[str, Any]:
-    return {"id": p.id, "name": p.name, "path": p.path, "created_at": _ts(p.created_at)}
+    return {
+        "id": p.id,
+        "name": p.name,
+        "path": p.path,
+        "checks": p.checks,
+        "created_at": _ts(p.created_at),
+    }
 
 
 def chat(c: Chat) -> dict[str, Any]:
@@ -74,6 +85,8 @@ def task(t: Task) -> dict[str, Any]:
         "branch": t.branch,
         "base_branch": t.base_branch,
         "merged_commit": t.merged_commit,
+        "checks": t.checks,
+        "resume_at": _ts(t.resume_at),
         "created_at": _ts(t.created_at),
         "updated_at": _ts(t.updated_at),
     }

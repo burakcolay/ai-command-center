@@ -74,6 +74,7 @@ export function ChatView(p: Props) {
       onSend={p.onSend}
       prefill={prefill}
       onStop={streaming ? () => p.onStop(streaming.id) : undefined}
+      onError={p.onError}
       autoFocus
     />
   );

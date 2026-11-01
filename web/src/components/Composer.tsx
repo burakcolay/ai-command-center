@@ -1,6 +1,7 @@
-import { ArrowUp, Cpu, FolderKanban, MessageCircle, Square, Zap } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import type { ComposerMode, Project } from "../lib/types";
+import { ArrowUp, Cpu, FolderKanban, LayoutTemplate, MessageCircle, Square, Zap } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ComposerMode, Project, Template } from "../lib/types";
+import { TemplatePicker } from "./TemplatePicker";
 
 interface Props {
   projects: Project[];
@@ -17,7 +18,16 @@ interface Props {
   prefill?: { text: string; nonce: number };
   /** While a reply is streaming: show a stop button instead of send. */
   onStop?: () => void;
+  onError: (msg: string) => void;
   autoFocus?: boolean;
+}
+
+/** Select the first [placeholder] so the user can type over it right away. */
+function selectPlaceholder(el: HTMLTextAreaElement) {
+  const start = el.value.indexOf("[");
+  const end = start === -1 ? -1 : el.value.indexOf("]", start);
+  if (end > start) el.setSelectionRange(start, end + 1);
+  else el.setSelectionRange(el.value.length, el.value.length);
 }
 
 const PLACEHOLDER: Record<ComposerMode, string> = {
@@ -28,7 +38,30 @@ const PLACEHOLDER: Record<ComposerMode, string> = {
 export function Composer(p: Props) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [picker, setPicker] = useState(false);
+  const [active, setActive] = useState(0);
+  const items = useRef<Template[]>([]);
   const ref = useRef<HTMLTextAreaElement>(null);
+  // "/" at the very start opens the picker and filters it as you type.
+  const slash = /^\/[^\s]*$/.test(text);
+  const pickerOpen = picker || slash;
+  const onItems = useCallback((list: Template[]) => {
+    items.current = list;
+    setActive((a) => Math.min(a, Math.max(list.length - 1, 0)));
+  }, []);
+
+  const pick = (t: Template) => {
+    setText(t.body);
+    p.onModeChange(t.mode);
+    setPicker(false);
+    setActive(0);
+    requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el) return;
+      el.focus();
+      selectPlaceholder(el);
+    });
+  };
 
   useEffect(() => {
     const el = ref.current;
@@ -62,16 +95,52 @@ export function Composer(p: Props) {
 
   return (
     <div
-      className={`rounded-2xl border bg-panel/90 backdrop-blur transition-colors focus-within:border-white/40 ${
+      className={`relative rounded-2xl border bg-panel/90 backdrop-blur transition-colors focus-within:border-white/40 ${
         p.mode === "task" ? "border-white/30" : "border-line-strong"
       }`}
     >
+      {pickerOpen && (
+        <TemplatePicker
+          query={slash ? text.slice(1) : ""}
+          active={active}
+          currentText={text}
+          currentMode={p.mode}
+          onPick={pick}
+          onClose={() => {
+            setPicker(false);
+            if (slash) setText("");
+          }}
+          onItems={onItems}
+          onError={p.onError}
+        />
+      )}
       <textarea
         ref={ref}
         value={text}
         autoFocus={p.autoFocus}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value);
+          setActive(0);
+        }}
         onKeyDown={(e) => {
+          if (pickerOpen && items.current.length) {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              e.preventDefault();
+              const n = items.current.length;
+              setActive((a) => (a + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+              return;
+            }
+            if (e.key === "Enter" && slash) {
+              e.preventDefault();
+              pick(items.current[active]);
+              return;
+            }
+          }
+          if (e.key === "Escape" && pickerOpen) {
+            setPicker(false);
+            if (slash) setText("");
+            return;
+          }
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
             void submit();
@@ -84,6 +153,17 @@ export function Composer(p: Props) {
       <div className="flex items-center justify-between gap-2 px-3 pb-3">
         <div className="flex min-w-0 items-center gap-1">
           <ModeSwitch mode={p.mode} onChange={p.onModeChange} />
+          <button
+            type="button"
+            onClick={() => setPicker((o) => !o)}
+            aria-expanded={pickerOpen}
+            title="Şablonlar (veya kutunun başına / yaz)"
+            className={`grid size-7 shrink-0 place-items-center rounded-md transition-colors ${
+              pickerOpen ? "bg-white/[0.08] text-fg" : "text-dim hover:text-fg"
+            }`}
+          >
+            <LayoutTemplate size={14} strokeWidth={1.6} />
+          </button>
           {p.mode === "chat" && p.chatModels.length > 1 && (
             <label
               className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-dim hover:text-fg"

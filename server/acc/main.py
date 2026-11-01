@@ -26,12 +26,22 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="Orbit", lifespan=lifespan)
 
 
+LOCAL_ORIGINS = ("http://127.0.0.1:", "http://localhost:")
+
+
 @app.middleware("http")
 async def localhost_only(request: Request, call_next):
-    # Blocks DNS-rebinding: a web page can't reach this API through a fake hostname.
+    # DNS rebinding: a web page can't reach this API through a fake hostname.
     host = request.headers.get("host", "")
     if not host.startswith(("127.0.0.1:", "localhost:")):
         return JSONResponse({"detail": "Yalnızca localhost"}, status_code=403)
+    # CSRF: another website open in the browser may send requests to 127.0.0.1 — the host
+    # is right, but the browser marks them cross-site and names the foreign origin.
+    origin = request.headers.get("origin")
+    if request.headers.get("sec-fetch-site") == "cross-site" or (
+        origin and not origin.startswith(LOCAL_ORIGINS)
+    ):
+        return JSONResponse({"detail": "Başka siteden gelen istek reddedildi"}, status_code=403)
     return await call_next(request)
 
 
@@ -41,7 +51,7 @@ app.include_router(router)
 @app.websocket("/ws")
 async def ws(socket: WebSocket):
     origin = socket.headers.get("origin", "")
-    if origin and not origin.startswith(("http://127.0.0.1:", "http://localhost:")):
+    if origin and not origin.startswith(LOCAL_ORIGINS):
         await socket.close(code=1008)
         return
     await socket.accept()

@@ -13,6 +13,7 @@ import type {
   Message,
   ModelInfo,
   Project,
+  SystemInfo,
   Task,
   TaskEvent,
   WsMessage,
@@ -34,7 +35,7 @@ export default function App() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
-  const [demoMode, setDemoMode] = useState(false);
+  const [system, setSystem] = useState<SystemInfo | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [mode, setMode] = useState<ComposerMode>("chat");
@@ -77,7 +78,7 @@ export default function App() {
   useEffect(() => {
     loadAll();
     api.agents().then(setAgents).catch(() => {});
-    api.system().then((s) => setDemoMode(s.demo_mode)).catch(() => {});
+    api.system().then(setSystem).catch(() => {});
   }, [loadAll]);
 
   const connected = useSocket((m: WsMessage) => {
@@ -205,7 +206,7 @@ export default function App() {
               chatModel={ollama ? chatModel : null}
               onChatModelChange={setChatModel}
               activity={activity}
-              demoMode={demoMode}
+              demoMode={system?.demo_mode ?? false}
               onModeChange={setMode}
               onProjectChange={setProjectId}
               onSend={send}
@@ -235,7 +236,16 @@ export default function App() {
           {view === "models" && (
             <ModelsView models={models} onRefresh={() => loadModels(true)} onError={showError} />
           )}
-          {view === "settings" && <SettingsView demoMode={demoMode} />}
+          {view === "settings" && (
+            <SettingsView
+              system={system}
+              onError={showError}
+              onToggleNotifications={(on) => {
+                setSystem((s) => s && { ...s, notifications: on });
+                api.setPreference("notifications", on).catch((e) => showError(e.message));
+              }}
+            />
+          )}
           {navItem?.phase && <ComingSoon item={navItem} />}
         </div>
 

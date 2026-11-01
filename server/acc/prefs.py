@@ -4,7 +4,7 @@ from acc.db import session
 from acc.models import Preference
 
 # Keys the UI may set. Anything else is rejected, so this never becomes a generic store.
-ALLOWED = {"ollama_model"}
+ALLOWED = {"ollama_model", "notifications"}
 
 
 def get(key: str, default: Any = None) -> Any:

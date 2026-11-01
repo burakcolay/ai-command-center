@@ -8,12 +8,56 @@ export type TaskStatus =
   | "failed"
   | "cancelled";
 
-export type Decision = "approve" | "reject" | "request_changes" | "cancel" | "retry";
+export type Decision = "approve" | "reject" | "request_changes" | "cancel" | "retry" | "fix_checks" | "rerun_checks";
+
+export interface CheckCommand {
+  name: string;
+  command: string;
+}
+
+export interface ChecksConfig {
+  setup: string | null;
+  commands: CheckCommand[];
+}
+
+export interface ChecksInfo {
+  configured: ChecksConfig | null;
+  detected: ChecksConfig;
+  effective: ChecksConfig;
+  sandbox: boolean;
+}
+
+export interface CheckResult extends CheckCommand {
+  status: "passed" | "failed" | "skipped";
+  exit_code?: number | null;
+  timed_out?: boolean;
+  duration_ms?: number;
+  output?: string;
+}
+
+export interface Template {
+  id: string;
+  title: string;
+  body: string;
+  mode: "chat" | "task";
+  description: string;
+  custom: boolean;
+}
+
+export interface SystemInfo {
+  demo_mode: boolean;
+  paid_api_allowed: boolean;
+  notifications: boolean;
+  notifications_supported: boolean;
+  sandbox_for_checks: boolean;
+  memory_dir: string;
+}
 
 export interface Project {
   id: number;
   name: string;
   path: string;
+  checks: ChecksConfig | null;
   created_at: string;
 }
 
@@ -97,6 +141,8 @@ export interface Task {
   branch: string | null;
   base_branch: string | null;
   merged_commit: string | null;
+  checks: CheckResult[] | null;
+  resume_at: string | null;
   steps: TaskStepState[];
   created_at: string;
   updated_at: string;

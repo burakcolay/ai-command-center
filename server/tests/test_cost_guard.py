@@ -90,3 +90,14 @@ def _fake_cli(tmp_path, status: dict):
 async def test_health_check_auth_methods(tmp_path, status, expected):
     a = ClaudeCodeAdapter(binary=_fake_cli(tmp_path, status))
     assert (await a.health_check()).state == expected
+
+
+def test_children_do_not_inherit_orbits_python(monkeypatch):
+    import os
+    import sys
+
+    monkeypatch.setenv("VIRTUAL_ENV", sys.prefix)
+    monkeypatch.setenv("PATH", os.pathsep.join([f"{sys.prefix}/bin", "/usr/bin", "/bin"]))
+    env = sanitized_env()
+    assert "VIRTUAL_ENV" not in env
+    assert env["PATH"] == os.pathsep.join(["/usr/bin", "/bin"])

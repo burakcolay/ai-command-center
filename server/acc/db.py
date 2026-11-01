@@ -7,6 +7,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from acc import config
 
 config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+config.DATA_DIR.chmod(0o700)  # chats, logs and worktrees: readable by this user only
 engine = create_engine(
     f"sqlite:///{config.DATA_DIR / 'acc.db'}",
     connect_args={"check_same_thread": False},

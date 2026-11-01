@@ -14,6 +14,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
@@ -118,6 +119,17 @@ class AdapterEvent:
 
 class AdapterError(Exception):
     """Raised when a run cannot start or must be aborted (auth, cost guard, crash)."""
+
+
+class QuotaExceeded(AdapterError):
+    """The subscription's usage window is used up. Work should wait, never switch to paid."""
+
+    def __init__(self, resets_at: int | None) -> None:
+        self.resets_at = resets_at
+        when = (
+            datetime.fromtimestamp(resets_at).strftime("%d.%m %H:%M") if resets_at else "bilinmiyor"
+        )
+        super().__init__(f"Claude abonelik kotası doldu (sıfırlanma: {when}).")
 
 
 class ModelAdapter(ABC):

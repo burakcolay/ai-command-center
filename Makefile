@@ -11,6 +11,7 @@ endif
 
 setup:
 	cd server && uv sync
+	cd tools && npm install
 	cd web && npm install && npm run build
 
 build:

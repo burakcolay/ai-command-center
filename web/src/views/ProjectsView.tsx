@@ -1,5 +1,6 @@
-import { BookMarked, Folder, Plus, X } from "lucide-react";
+import { BookMarked, Folder, Plus, ShieldCheck, X } from "lucide-react";
 import { useState } from "react";
+import { ChecksEditor } from "../components/ChecksEditor";
 import { MemoryEditor } from "../components/MemoryEditor";
 import { api } from "../lib/api";
 import type { Project } from "../lib/types";
@@ -17,6 +18,7 @@ export function ProjectsView({ projects, onChanged, onOpen, onError }: Props) {
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
   const [memoryFor, setMemoryFor] = useState<Project | null>(null);
+  const [checksFor, setChecksFor] = useState<Project | null>(null);
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,6 +109,13 @@ export function ProjectsView({ projects, onChanged, onOpen, onError }: Props) {
                 <div className="truncate font-mono text-[11px] text-faint">{p.path}</div>
               </button>
               <button
+                onClick={() => setChecksFor(p)}
+                className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2 py-1 font-mono text-[10.5px] text-dim hover:border-white/30 hover:text-fg"
+                title="Kalite kontrolleri: incelemeden önce sandbox'ta çalışan test ve lint komutları"
+              >
+                <ShieldCheck size={11} /> Kontroller
+              </button>
+              <button
                 onClick={() => setMemoryFor(p)}
                 className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2 py-1 font-mono text-[10.5px] text-dim hover:border-white/30 hover:text-fg"
                 title="Proje hafızası: her ajana verilen kalıcı kararlar ve kurallar"
@@ -123,6 +132,9 @@ export function ProjectsView({ projects, onChanged, onOpen, onError }: Props) {
             </div>
           ))}
         </div>
+      )}
+      {checksFor && (
+        <ChecksEditor project={checksFor} onClose={() => setChecksFor(null)} onError={onError} />
       )}
       {memoryFor && (
         <MemoryEditor project={memoryFor} onClose={() => setMemoryFor(null)} onError={onError} />

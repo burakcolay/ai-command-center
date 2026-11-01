@@ -20,6 +20,10 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 # Isolated per-task git worktrees live here, never inside the user's project.
 WORKTREES_DIR = DATA_DIR / "worktrees"
 
+# sandbox-runtime (srt) runs quality-gate commands; installed by `make setup` into tools/.
+SRT_BIN = Path(os.environ.get("ACC_SRT_BIN", ROOT / "tools" / "node_modules" / ".bin" / "srt"))
+CHECK_TIMEOUT_S = 600
+
 # How many tasks may execute at once. 1 keeps RAM and subscription quota predictable.
 MAX_PARALLEL_TASKS = 1
 

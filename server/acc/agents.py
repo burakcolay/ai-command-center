@@ -4,33 +4,9 @@ adapters it prefers. Tool lists are enforced by the CLI (--tools), not by the pr
 from dataclasses import dataclass
 from typing import Any
 
-READ_ONLY_TOOLS = ["Read", "Glob", "Grep"]
+from acc import security
 
-# Any agent that can run shell commands gets Claude Code's OS-level sandbox:
-# writes only inside the task worktree, no reads of credential folders, network only to
-# package registries. failIfUnavailable: if the sandbox can't start, nothing runs.
-SANDBOX_SETTINGS: dict[str, Any] = {
-    "sandbox": {
-        "enabled": True,
-        "autoAllowBashIfSandboxed": True,
-        "allowUnsandboxedCommands": False,
-        "failIfUnavailable": True,
-        "network": {
-            "allowedDomains": ["registry.npmjs.org", "pypi.org", "files.pythonhosted.org"],
-        },
-        "filesystem": {
-            "denyRead": [
-                "~/.ssh",
-                "~/.aws",
-                "~/.gnupg",
-                "~/.config/gh",
-                "~/.netrc",
-                "~/.docker",
-                "~/Library/Keychains",
-            ],
-        },
-    }
-}
+READ_ONLY_TOOLS = ["Read", "Glob", "Grep"]
 
 
 @dataclass(frozen=True)
@@ -45,7 +21,7 @@ class Agent:
 
     @property
     def settings(self) -> dict[str, Any] | None:
-        return SANDBOX_SETTINGS if "Bash" in self.tools else None
+        return security.claude_sandbox_settings() if "Bash" in self.tools else None
 
 
 AGENTS: dict[str, Agent] = {

@@ -29,6 +29,7 @@ JUNK = [
     "node_modules",
     ".DS_Store",
     ".coverage",
+    ".orbit-cache",
 ]
 WITHOUT_JUNK = [
     "--",

@@ -47,6 +47,27 @@ Kısa ve net işler için doğrudan **Görev** moduna geçip yazabilirsiniz. İy
 - kapsamın sınırı (ne yapılmayacağı),
 - "bitti" sayılma ölçütü, örneğin "testler geçsin".
 
+## Kalite kontrolleri
+
+Ajanlar işini bitirince ORBIT projenizin test, lint ve tip kontrolü komutlarını **kendisi** çalıştırır ve sonucu diff'in yanında gösterir. Böylece "testler geçti" bilgisi bir modelin iddiası değil, ölçülmüş bir sonuç olur.
+- **Komut seçimi:** npm, Python (uv veya requirements) ve Makefile projelerinde komutlar otomatik algılanır. **Projeler → Kontroller**'den değiştirilebilir.
+- **Sandbox:** Komutlar `sandbox-runtime` içinde çalışır; yalnızca görevin kopyasına yazabilir ve internete yalnızca paket depoları üzerinden çıkabilir. Sandbox kurulu değilse komutlar hiç çalıştırılmaz.
+- **Başarısız kontrol:** **Ajana düzelttir** hata çıktısıyla bir düzeltme adımı ekler. **Yeniden çalıştır** ajan çalıştırmadan kontrolleri tekrarlar.
+
+## Kota, bildirimler, şablonlar
+
+- **Kota dolunca:** Görev hata vermez, "Kota bekleniyor" durumuna geçer ve kota sıfırlandığında kendiliğinden devam eder. İsterseniz **Şimdi dene** ile hemen deneyebilirsiniz. Ücretli kullanıma hiçbir durumda geçilmez.
+- **Bildirimler:** Plan hazır, inceleme hazır, kota doldu veya görev başarısız olduğunda macOS bildirimi gelir. **Ayarlar**'dan kapatılıp test edilebilir.
+- **Şablonlar:** Yazma kutusundaki şablon butonu ya da kutunun başına `/` yazmak hazır istekleri açar (test ekle, hata düzelt, güvenlik incelemesi …). Yazdığınız bir metni şablon olarak kaydedebilirsiniz.
+
+## Güvenlik
+
+- **Ağ:** Sunucu yalnızca `127.0.0.1`'de dinler. Başka sitelerden gelen istekler (CSRF) ve sahte host adları (DNS rebinding) reddedilir.
+- **Gizli dosyalar:** Ajanlar `.env`, `*.pem`, `*.key`, `*.p8` gibi dosyaları okuyamaz. Komut çalıştıranlar `~/.ssh`, `~/.aws`, `~/.claude` gibi klasörleri ve ORBIT'in kendi veritabanını göremez.
+- **Repo ayarları:** Repo içindeki `.claude/settings.json` dikkate alınmaz; bir repo kendi hook'larıyla komut çalıştıramaz.
+- **Loglar:** Token, anahtar ve şifre benzeri değerler kaydedilmeden önce `[gizli]` olarak maskelenir. `data/` klasörü yalnızca sizin kullanıcınız tarafından okunabilir.
+- **Git:** Veritabanı, loglar, hafıza ve çalışma kopyaları `.gitignore`'dadır; GitHub'a gitmez.
+
 ## Proje Hafızası
 
 Her projenin, ORBIT'in her sohbete, plana ve ajana verdiği bir hafıza dosyası vardır. Açmak için **Projeler → Hafıza**.

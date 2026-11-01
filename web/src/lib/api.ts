@@ -4,12 +4,16 @@ import type {
   Chat,
   Decision,
   Message,
+  ChecksConfig,
+  ChecksInfo,
   ComposerMode,
   ModelInfo,
   Project,
+  SystemInfo,
   Task,
   TaskDiff,
   TaskEvent,
+  Template,
 } from "./types";
 
 export class ApiError extends Error {
@@ -48,7 +52,15 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ content }),
     }),
-  setPreference: (key: string, value: string) =>
+  checks: (id: number) => req<ChecksInfo>(`/projects/${id}/checks`),
+  saveChecks: (id: number, config: ChecksConfig | null) =>
+    req<ChecksInfo>(`/projects/${id}/checks`, { method: "PUT", body: JSON.stringify({ config }) }),
+  templates: () => req<Template[]>("/templates"),
+  createTemplate: (title: string, body: string, mode: ComposerMode) =>
+    post<{ id: string }>("/templates", { title, body, mode }),
+  deleteTemplate: (id: string) => req<void>(`/templates/${id}`, { method: "DELETE" }),
+  testNotification: () => post<{ sent: boolean }>("/notify/test", {}),
+  setPreference: (key: string, value: string | boolean) =>
     req<unknown>(`/preferences/${key}`, { method: "PUT", body: JSON.stringify({ value }) }),
 
   chats: () => req<Chat[]>("/chats"),
@@ -78,5 +90,5 @@ export const api = {
 
   models: (fresh = false) => req<ModelInfo[]>(`/models${fresh ? "?fresh=true" : ""}`),
   agents: () => req<Agent[]>("/agents"),
-  system: () => req<{ demo_mode: boolean; paid_api_allowed: boolean }>("/system"),
+  system: () => req<SystemInfo>("/system"),
 };
