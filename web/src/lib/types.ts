@@ -8,7 +8,7 @@ export type TaskStatus =
   | "failed"
   | "cancelled";
 
-export type Decision = "approve" | "reject" | "request_changes" | "cancel" | "retry" | "fix_checks" | "rerun_checks";
+export type Decision = "approve" | "reject" | "request_changes" | "cancel" | "retry" | "fix_checks" | "rerun_checks" | "undo_last";
 
 export interface CheckCommand {
   name: string;
@@ -107,8 +107,8 @@ export interface TaskStepState {
   title: string;
   agent: string;
   description: string;
-  kind: "plan" | "revision";
-  status: "pending" | "running" | "done" | "failed";
+  kind: "plan" | "revision" | "edit";
+  status: "pending" | "running" | "done" | "failed" | "reverted";
   summary: string | null;
   commit: string | null;
   adapter_id: string | null;
@@ -137,6 +137,7 @@ export interface Task {
   title: string;
   request: string;
   status: TaskStatus;
+  kind: "plan" | "session";
   plan: Plan | null;
   adapter_id: string | null;
   error: string | null;
@@ -210,7 +211,7 @@ export interface Agent {
   writes_files: boolean;
 }
 
-export type ComposerMode = "chat" | "research" | "task";
+export type ComposerMode = "chat" | "research" | "edit" | "task";
 
 export type WsMessage =
   | { type: "message"; message: Message }

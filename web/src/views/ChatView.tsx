@@ -18,6 +18,10 @@ const SUGGESTIONS: Record<ComposerMode, string[]> = {
     "Bu projenin mimarisini bana anlat",
     "Bu projede en çok neyi iyileştirmeliyim?",
   ],
+  edit: [
+    "Ana ekrandaki başlığı daha büyük ve kalın yap",
+    "Hata mesajlarını Türkçeleştir",
+  ],
   task: [
     "README dosyasını mevcut kod yapısına göre yeniden yaz",
     "Test kapsamını incele ve eksik testleri ekle",
@@ -111,6 +115,7 @@ export function ChatView(p: Props) {
                 chat: "Sohbet modunda hiçbir dosya değişmez. Karar verdiğinde sohbeti göreve dönüştür.",
                 research:
                   "Araştırma modu onlarca kaynak tarar, kaynakçalı bir rapor yazar ve kaydeder. Birkaç dakika sürebilir.",
+                edit: "Düzenle modunda her mesaj hemen uygulanır (projenin bir kopyasında). Diff'i görüp birleştirirsin.",
                 task: "Görev modunda Orchestrator bir plan çıkarır; onayından sonra ajanlar uygular.",
               }[p.mode]
             }
@@ -122,6 +127,9 @@ export function ChatView(p: Props) {
   }
 
   const lastAssistant = [...p.messages].reverse().find((m) => m.role === "assistant");
+  // A session collects many messages; its card is shown once, at its latest message.
+  const lastCardFor = new Map<number, number>();
+  for (const m of p.messages) if (m.role === "task" && m.task_id) lastCardFor.set(m.task_id, m.id);
 
   return (
     <div className="flex h-full flex-col">
@@ -139,6 +147,13 @@ export function ChatView(p: Props) {
             }
             if (m.role === "task") {
               const t = m.task_id ? p.tasks[m.task_id] : undefined;
+              if (t && lastCardFor.get(t.id) !== m.id) {
+                return (
+                  <div key={m.id} className="font-mono text-[10.5px] text-faint">
+                    ↳ düzenleme oturumuna eklendi · #{t.id}
+                  </div>
+                );
+              }
               return t ? (
                 <TaskCard
                   key={m.id}

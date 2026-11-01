@@ -38,7 +38,9 @@ Port 7420 doluysa başka bir port seçin (örnek: `make start PORT=7500`). Sunuc
 
 ## Nasıl kullanılır
 
-Yazma kutusunda üç mod vardır: **Sohbet**, **Araştırma** ve **Görev**.
+Yazma kutusunda dört mod vardır: **Sohbet**, **Araştırma**, **Düzenle** ve **Görev**.
+
+- **Düzenle:** Küçük değişiklikler için. Plan ve onay adımı yoktur; her mesaj projenin izole bir kopyasında hemen uygulanır, kalite kontrolleri çalışır ve diff önüne gelir. Mesaj yazdıkça aynı oturuma yeni adımlar eklenir. **Son değişikliği geri al**, **Birleştir** ve **Hepsini at** butonları vardır.
 
 - **Araştırma:** Bir pazar, rakip ya da teknoloji sorusu için onlarca kaynağı tarar ve rakamları karşılaştırır. Kaynakçalı bir rapor yazar: rakip tablosu, fırsatlar, net öneri ve MVP. Rapor `Araştırmalar/` klasörüne markdown olarak kaydedilir. Birkaç dakika sürer.
 - **Model ve düşünme:** **Ayarlar**'dan kalite (Ekonomik / Dengeli / En iyi) ve model (Varsayılan / Sonnet / Opus / Fable) seçilir. Daha yüksek kalite daha derin düşünür ama kotayı daha hızlı harcar.

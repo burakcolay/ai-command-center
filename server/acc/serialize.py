@@ -79,6 +79,7 @@ def task(t: Task) -> dict[str, Any]:
         "title": t.title,
         "request": t.request,
         "status": t.status,
+        "kind": t.kind,
         "plan": t.plan,
         "adapter_id": t.adapter_id,
         "error": t.error,

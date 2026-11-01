@@ -4,6 +4,7 @@ import {
   FolderKanban,
   LayoutTemplate,
   MessageCircle,
+  PenLine,
   Square,
   Telescope,
   Zap,
@@ -42,6 +43,7 @@ function selectPlaceholder(el: HTMLTextAreaElement) {
 const PLACEHOLDER: Record<ComposerMode, string> = {
   chat: "Bir şey sor ya da fikrini anlat…",
   research: "Ne araştırılsın? ör. iOS'ta talebi olup rekabeti düşük nişler",
+  edit: "Ne değişsin? ör. giriş butonunu büyüt, rengini koyulaştır",
   task: "Yapılacak işi tanımla — plan çıkarılıp onayına sunulur…",
 };
 
@@ -260,6 +262,12 @@ function ModeSwitch({ mode, onChange }: { mode: ComposerMode; onChange: (m: Comp
         "Araştırma",
         Telescope,
         "Onlarca kaynak tarar, kaynakçalı rapor yazar ve kaydeder. Birkaç dakika sürebilir.",
+      )}
+      {item(
+        "edit",
+        "Düzenle",
+        PenLine,
+        "Küçük değişiklikler: plan yok, hemen uygulanır; diff'i görüp birleştirirsin.",
       )}
       {item("task", "Görev", Zap, "Plan çıkar, onayla, ajanlar uygulasın.")}
     </div>

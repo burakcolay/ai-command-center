@@ -21,6 +21,9 @@ from acc.models import (
     Project,
     Task,
     TaskEvent,
+    TaskKind,
+    TaskStage,
+    TaskStatus,
     Template,
 )
 from acc.orchestrator import Decision, ExecError, InvalidTransition, Orchestrator
@@ -180,7 +183,7 @@ class MessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=100_000)  # long specs can be pasted
     project_id: int | None = None
     # chat: talk it through (nothing changes) · task: plan → approve → execute
-    mode: Literal["chat", "task", "research"] = "task"
+    mode: Literal["chat", "task", "research", "edit"] = "task"
     # chat only: which model answers (None = default, Claude). e.g. "ollama"
     model: str | None = Field(default=None, max_length=64)
 
@@ -246,7 +249,36 @@ async def post_message(chat_id: int, body: MessageIn):
         s.add(user_msg)
         s.flush()
         task = None
-        if body.mode == "research":
+        new_edit = None
+        if body.mode == "edit":
+            if c.project_id is None:
+                raise HTTPException(400, "Düzenleme için önce bir proje seç.")
+            context = context_for_task(s, c, before_id=user_msg.id)
+            task = s.scalars(
+                select(Task)
+                .where(
+                    Task.chat_id == chat_id,
+                    Task.kind == TaskKind.SESSION,
+                    Task.status.not_in([TaskStatus.COMPLETED, TaskStatus.CANCELLED]),
+                )
+                .order_by(Task.id.desc())
+            ).first()
+            if task is None:
+                task = Task(
+                    chat_id=chat_id,
+                    project_id=c.project_id,
+                    request=content,
+                    context=context,
+                    title=content[:80],
+                    kind=TaskKind.SESSION,
+                    stage=TaskStage.EXECUTE,
+                    status=TaskStatus.QUEUED,
+                )
+                s.add(task)
+                s.flush()
+            new_edit = (task.id, content, context)
+            reply = Message(chat_id=chat_id, role="task", content="", task_id=task.id)
+        elif body.mode == "research":
             reply = Message(
                 chat_id=chat_id,
                 role="assistant",
@@ -284,7 +316,11 @@ async def post_message(chat_id: int, body: MessageIn):
             "messages": [serialize.message(user_msg), serialize.message(reply)],
             "task": serialize.task_full(s, task) if task else None,
         }
-    if task:
+    if new_edit:
+        orchestrator.add_edit(*new_edit)
+        with session() as s:
+            result["task"] = serialize.task_full(s, s.get(Task, new_edit[0]))
+    elif task:
         orchestrator.start_planning(result["task"]["id"])
     else:
         chat_service.start_reply(result["messages"][1]["id"])

@@ -125,6 +125,15 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 - Rapor `MEMORY_DIR/Araştırmalar/` altına kaydedilir.
 - Ölçülen gerçek bir çalıştırma: ~8 dakika, 5 saatlik kotanın ~%5'i, 43 kaynak linki.
 
+### Düzenleme oturumu (`tasks.kind = "session"`)
+
+- **Akış:** Planlama yoktur. Sohbetteki her "Düzenle" mesajı açık oturuma bir `edit` adımı ekler (`Orchestrator.add_edit`). Ardından adımlar, kontroller ve inceleme aynı yürütme motoruyla yapılır.
+- **Yürütme sırasında gelen mesajlar:** Yürütme döngüsü bekleyen adım kalmayana kadar döner; arada gelen düzenleme incelemeden önce uygulanır.
+- **Geri alma:** `undo_last`, en son commit'li adımı worktree'de `reset --hard <commit>~1` ile düşürür ve adımı `reverted` yapar. Geri alınan adım tekrar deneme veya kota sonrası devamda yeniden çalışmaz (`SETTLED`).
+- **Oturum yaşam süresi:** Fark kalmasa da oturum açık kalır. Birleştirme veya "Hepsini at" ile kapanır; bir sonraki düzenleme yeni oturum açar.
+- **Kurulum önbelleği:** Kontrollerin kurulum adımı, komut ve bağımlılık dosyaları değişmedikçe aynı worktree'de bir kez çalışır (`.orbit-cache/setup.done`). Kontrol sonrası temizlik önbellekleri ve kurulu bağımlılıkları silmez.
+- **Ajan bilgisi:** Ajanlara projenin kalite kontrol komutları da verilir; işlerini aynı komutla doğrulayabilirler.
+
 ### Sohbet ve görev
 
 
@@ -196,6 +205,8 @@ Her aktif durumdan cancel ──► cancelled
 - [x] **macOS bildirimleri**
 - [x] **Şablonlar** (hazır ve kullanıcı)
 - [x] **Güvenlik sertleştirmesi:** CSRF, gizli dosya erişimi, log maskeleme, özel veri klasörü, temiz alt süreç ortamı
-- [ ] **Sıradaki adaylar:** GitHub entegrasyonu (Faz 4: branch, PR hazırlama — push/merge onaylı); web projeleri için görsel önizleme
+- [x] **Düzenleme oturumu** (hızlı değişiklik, geri alma, birleştirme)
+- [ ] **Sıradaki:** görsel ekleme + tasarım varyantları; ardından model yönlendirici
+- [ ] **Diğer adaylar:** GitHub entegrasyonu (Faz 4: branch, PR hazırlama — push/merge onaylı); web projeleri için görsel önizleme
 - [ ] Grok Build adaptörü (ücretsiz erişim doğrulanırsa)
 - [ ] Faz 4–8: dokümandaki sırayla

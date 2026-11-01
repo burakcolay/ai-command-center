@@ -31,6 +31,7 @@ from acc.models import (
     StepStatus,
     Task,
     TaskEvent,
+    TaskKind,
     TaskStage,
     TaskStatus,
     TaskStep,
@@ -38,6 +39,7 @@ from acc.models import (
 from acc.models import utcnow as _now
 
 TERMINAL = {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
+SETTLED = {StepStatus.DONE, StepStatus.REVERTED}  # steps that never run again
 RESUME_MARGIN = timedelta(minutes=1)  # wait a little past the quota reset before resuming
 UNKNOWN_RESET_WAIT = timedelta(minutes=30)
 CONTEXT_FOR_STEPS = 60_000  # chars of conversation each agent step sees
@@ -88,6 +90,7 @@ class Decision(StrEnum):
     RETRY = "retry"
     FIX_CHECKS = "fix_checks"  # failed quality gates -> revision step with their output
     RERUN_CHECKS = "rerun_checks"  # run the quality gates again, no agent involved
+    UNDO_LAST = "undo_last"  # drop the most recent committed step
 
 
 class InvalidTransition(Exception):
@@ -196,7 +199,7 @@ class Orchestrator:
             if stage != TaskStage.PLAN:
                 for st in s.scalars(
                     select(TaskStep).where(
-                        TaskStep.task_id == task_id, TaskStep.status != StepStatus.DONE
+                        TaskStep.task_id == task_id, TaskStep.status.not_in(SETTLED)
                     )
                 ):
                     st.status = StepStatus.PENDING
@@ -316,8 +319,11 @@ class Orchestrator:
             self._update(task_id, status=TaskStatus.RUNNING, error=None)
             try:
                 root, wt, cwd = await self._prepare_workspace(task_id)
-                await self._run_steps(task_id, wt, cwd)
-                await self._run_checks(task_id, wt, cwd)
+                while True:  # edits that arrive meanwhile are picked up before review
+                    await self._run_steps(task_id, wt, cwd)
+                    await self._run_checks(task_id, wt, cwd)
+                    if not self._has_pending(task_id):
+                        break
                 await self._finish_execution(task_id, root, wt)
             except QuotaExceeded as e:
                 self._pause(task_id, e.resets_at)
@@ -385,12 +391,16 @@ class Orchestrator:
                 steps = s.scalars(
                     select(TaskStep).where(TaskStep.task_id == task_id).order_by(TaskStep.seq)
                 ).all()
-                nxt = next((st for st in steps if st.status != StepStatus.DONE), None)
+                nxt = next((st for st in steps if st.status not in SETTLED), None)
                 if nxt is None:
                     return
                 done = [st for st in steps if st.status == StepStatus.DONE]
                 project = s.get(Project, t.project_id)
-                prompt = memory.prompt_block(project.name) + step_prompt(t, nxt, done, len(steps))
+                prompt = (
+                    memory.prompt_block(project.name)
+                    + checks_block(checks.effective(project.checks, cwd))
+                    + step_prompt(t, nxt, done, len(steps))
+                )
                 step_pk, step_id, agent = nxt.id, nxt.step_id, AGENTS.get(nxt.agent)
             if self._status(task_id) != TaskStatus.RUNNING:
                 return
@@ -460,12 +470,82 @@ class Orchestrator:
         self._update(task_id, checks=results)
         self._log(task_id, f"Kalite kontrolleri: {checks.summary(results)}")
 
+    @staticmethod
+    def _has_pending(task_id: int) -> bool:
+        with session() as s:
+            return (
+                s.scalar(
+                    select(func.count()).where(
+                        TaskStep.task_id == task_id, TaskStep.status == StepStatus.PENDING
+                    )
+                )
+                > 0
+            )
+
+    def add_edit(self, task_id: int, request: str, context: str | None) -> None:
+        """Quick-edit session: append the user's change as a step and make sure it runs."""
+        with session() as s:
+            t = s.get(Task, task_id)
+            status = TaskStatus(t.status)
+            if context:
+                t.context = context
+            n = s.scalar(select(func.max(TaskStep.seq)).where(TaskStep.task_id == task_id))
+            edits = s.scalar(
+                select(func.count()).where(TaskStep.task_id == task_id, TaskStep.kind == "edit")
+            )
+            s.add(
+                TaskStep(
+                    task_id=task_id,
+                    seq=0 if n is None else n + 1,
+                    step_id=f"d{edits + 1}",
+                    title=request[:300],
+                    agent="developer",
+                    description=request,
+                    kind="edit",
+                )
+            )
+            if status == TaskStatus.WAITING_APPROVAL:
+                for a in s.scalars(
+                    select(Approval).where(
+                        Approval.task_id == task_id, Approval.status == ApprovalStatus.PENDING
+                    )
+                ):
+                    a.status, a.decided_at = ApprovalStatus.CANCELLED, _now()
+            if status == TaskStatus.FAILED:
+                for st in s.scalars(
+                    select(TaskStep).where(
+                        TaskStep.task_id == task_id,
+                        TaskStep.status.in_([StepStatus.FAILED, StepStatus.RUNNING]),
+                    )
+                ):
+                    st.status = StepStatus.PENDING
+        broker.publish({"type": "approvals_changed"})
+        # Running / queued / paused sessions pick the new step up on their own.
+        if status in (TaskStatus.WAITING_APPROVAL, TaskStatus.FAILED):
+            self._update(task_id, status=TaskStatus.QUEUED, stage=TaskStage.EXECUTE, error=None)
+            self.start_execution(task_id)
+        elif status == TaskStatus.QUEUED and self._is_new(task_id):
+            self.start_execution(task_id)
+        else:
+            self._publish(task_id)
+
+    @staticmethod
+    def _is_new(task_id: int) -> bool:
+        with session() as s:
+            return s.get(Task, task_id).worktree is None
+
     async def _finish_execution(self, task_id: int, root: Path, wt: Path) -> None:
         if self._status(task_id) != TaskStatus.RUNNING:
             return
         with session() as s:
-            base = s.get(Task, task_id).base_commit
+            t = s.get(Task, task_id)
+            base, is_session = t.base_commit, t.kind == TaskKind.SESSION
         d = await gitops.diff(wt, base)
+        if not d["files"] and is_session:
+            # A session stays open for more edits even when nothing differs (e.g. after undo).
+            self._update(task_id, status=TaskStatus.WAITING_APPROVAL, stage=TaskStage.MERGE)
+            self._log(task_id, "Şu an projeye göre fark yok. Yeni bir düzenleme yazabilirsin.")
+            return
         if not d["files"]:
             self._log(task_id, "Adımlar tamamlandı; hiçbir dosya değişmedi.")
             await self._cleanup(task_id, merged=False)
@@ -541,6 +621,28 @@ class Orchestrator:
             name, f"Görev #{task_id} · **{title}** — {first} · {shown} · `{merged_commit[:8]}`"
         )
 
+    async def _undo_last(self, task_id: int) -> None:
+        with session() as s:
+            t = s.get(Task, task_id)
+            last = s.scalars(
+                select(TaskStep)
+                .where(
+                    TaskStep.task_id == task_id,
+                    TaskStep.status == StepStatus.DONE,
+                    TaskStep.commit.is_not(None),
+                )
+                .order_by(TaskStep.seq.desc())
+            ).first()
+            if last is None or not t.worktree:
+                raise InvalidTransition("Geri alınacak değişiklik yok.")
+            wt, commit, step_pk, title = Path(t.worktree), last.commit, last.id, last.title
+        try:
+            await gitops.undo_commit(wt, commit)
+        except GitError as e:
+            raise InvalidTransition(str(e)) from None
+        self._update_step(step_pk, task_id, status=StepStatus.REVERTED)
+        self._log(task_id, f"Geri alındı: {title[:120]}")
+
     # ---------- decisions ----------
 
     async def decide(self, task_id: int, decision: Decision, note: str | None) -> dict[str, Any]:
@@ -559,6 +661,7 @@ class Orchestrator:
             Decision.FIX_CHECKS: status == TaskStatus.WAITING_APPROVAL and stage == TaskStage.MERGE,
             Decision.RERUN_CHECKS: status == TaskStatus.WAITING_APPROVAL
             and stage == TaskStage.MERGE,
+            Decision.UNDO_LAST: status == TaskStatus.WAITING_APPROVAL and stage == TaskStage.MERGE,
         }[decision]
         if not allowed:
             raise InvalidTransition(f"'{status}' durumundaki görev için '{decision}' yapılamaz.")
@@ -571,6 +674,9 @@ class Orchestrator:
                 raise InvalidTransition("Başarısız kalite kontrolü yok.")
             note = checks.failure_note(results)
             decision = Decision.REQUEST_CHANGES
+
+        if decision == Decision.UNDO_LAST:
+            await self._undo_last(task_id)  # raises InvalidTransition if nothing to undo
 
         merged_commit = None
         if decision == Decision.APPROVE and stage == TaskStage.MERGE:
@@ -588,6 +694,7 @@ class Orchestrator:
             Decision.RETRY: None,
             Decision.FIX_CHECKS: None,
             Decision.RERUN_CHECKS: ApprovalStatus.CANCELLED,  # a fresh review follows
+            Decision.UNDO_LAST: ApprovalStatus.CANCELLED,
         }[decision]
         if approval_status:
             with session() as s:
@@ -653,6 +760,12 @@ class Orchestrator:
             self.start_execution(task_id)
             return payload
 
+        if decision == Decision.UNDO_LAST:
+            # Re-run the checks on the restored state, then back to review.
+            payload = self._update(task_id, status=TaskStatus.QUEUED, stage=TaskStage.EXECUTE)
+            self.start_execution(task_id)
+            return payload
+
         if decision == Decision.RERUN_CHECKS:
             # All steps are done, so execution goes straight to the checks and back to review.
             self._log(task_id, "Kalite kontrolleri yeniden çalıştırılıyor.")
@@ -667,7 +780,7 @@ class Orchestrator:
             with session() as s:
                 for st in s.scalars(
                     select(TaskStep).where(
-                        TaskStep.task_id == task_id, TaskStep.status != StepStatus.DONE
+                        TaskStep.task_id == task_id, TaskStep.status.not_in(SETTLED)
                     )
                 ):
                     st.status = StepStatus.PENDING
@@ -741,9 +854,26 @@ def order_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def checks_block(cfg: dict[str, Any]) -> str:
+    """Tell agents which commands Orbit will verify their work with, so they can run them too."""
+    if not cfg.get("commands"):
+        return ""
+    lines = [f"- {c['name']}: {c['command']}" for c in cfg["commands"]]
+    if cfg.get("setup"):
+        lines.insert(0, f"- (kurulum) {cfg['setup']}")
+    return (
+        "KALİTE KONTROLLERİ (adımından sonra Orbit bunları çalıştırır; işini bu komutlarla "
+        "doğrula):\n" + "\n".join(lines) + "\n\n"
+    )
+
+
 def step_prompt(t: Task, step: TaskStep, done: list[TaskStep], total: int) -> str:
     plan = t.plan or {}
-    parts = [f"GÖREV: {t.request}", f"PLAN ÖZETİ: {plan.get('summary', '')}"]
+    parts = (
+        [f"DÜZENLEME OTURUMU: {t.title}"]
+        if t.kind == TaskKind.SESSION
+        else [f"GÖREV: {t.request}", f"PLAN ÖZETİ: {plan.get('summary', '')}"]
+    )
     if t.context:
         parts.append("SOHBET GEÇMİŞİ (kararların ayrıntısı):\n" + t.context[-CONTEXT_FOR_STEPS:])
     if done:
@@ -755,6 +885,12 @@ def step_prompt(t: Task, step: TaskStep, done: list[TaskStep], total: int) -> st
                 for d in done
             )
         )
+    if step.kind == "edit":
+        parts.append(
+            "KULLANICININ DEĞİŞİKLİK İSTEĞİ (hızlı düzenleme; doğrudan uygula, istenenin dışına "
+            "çıkma):\n" + step.description
+        )
+        return "\n\n".join(parts)
     if step.kind == "revision":
         parts.append(
             "KULLANICI GERİ BİLDİRİMİ (mevcut değişiklikleri inceledi ve şunu istedi):\n"

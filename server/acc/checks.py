@@ -9,6 +9,7 @@ network only to package registries. Without the sandbox, nothing runs.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import shlex
 import shutil
@@ -145,9 +146,16 @@ async def run(cfg: dict[str, Any], worktree: Path, cwd: Path, task_id: int) -> l
     prefix = f"export TMPDIR={shlex.quote(str(tmp))}; "
 
     results: list[dict] = []
-    if setup := cfg.get("setup"):
+    setup = cfg.get("setup")
+    marker = cache / "setup.done"
+    fingerprint = _setup_fingerprint(setup, cwd) if setup else ""
+    if setup and marker.exists() and marker.read_text() == fingerprint:
+        setup = None  # dependencies already installed in this worktree and unchanged
+    if setup:
         r = await _run_one(prefix + setup, cwd, settings_file, env)
         ok = r["exit_code"] == 0
+        if ok:
+            marker.write_text(fingerprint)
         results.append(
             {"name": "kurulum", "command": setup, "status": "passed" if ok else "failed", **r}
         )
@@ -165,6 +173,27 @@ async def run(cfg: dict[str, Any], worktree: Path, cwd: Path, task_id: int) -> l
         r = await _run_one(prefix + c["command"], cwd, settings_file, env)
         results.append({**c, "status": "passed" if r["exit_code"] == 0 else "failed", **r})
     return results
+
+
+LOCKFILES = (
+    "package.json",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "pyproject.toml",
+    "uv.lock",
+    "requirements.txt",
+)
+
+
+def _setup_fingerprint(setup: str, cwd: Path) -> str:
+    """Setup only reruns when the command or a dependency manifest changed."""
+    h = hashlib.sha256(setup.encode())
+    for name in LOCKFILES:
+        f = cwd / name
+        if f.exists():
+            h.update(name.encode() + f.read_bytes())
+    return h.hexdigest()
 
 
 def failure_note(results: list[dict]) -> str:

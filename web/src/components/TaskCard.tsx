@@ -1,4 +1,4 @@
-import { ChevronRight, FilePen, GitBranch, GitMerge, TriangleAlert } from "lucide-react";
+import { ChevronRight, FilePen, GitBranch, GitMerge, TriangleAlert, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { toolTarget } from "../lib/format";
@@ -43,17 +43,22 @@ export function TaskCard({ task, events, onLoadEvents, onError }: Props) {
   };
 
   const plan = task.plan;
+  const isSession = task.kind === "session";
   const lastLine = events?.filter((e) => e.kind !== "usage").at(-1);
   const doneSteps = task.steps.filter((s) => s.status === "done").length;
   const resumeAt = task.resume_at
     ? new Date(task.resume_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })
     : null;
   const statusLabel = review
-    ? "İnceleme bekliyor"
+    ? isSession
+      ? "Değişiklikler hazır"
+      : "İnceleme bekliyor"
     : task.status === "paused" && resumeAt
       ? `Kota bekleniyor · ${resumeAt}'de devam`
     : task.status === "running" && task.steps.length
-      ? `Çalışıyor · ${Math.min(doneSteps + 1, task.steps.length)}/${task.steps.length}`
+      ? isSession
+        ? "Uygulanıyor"
+        : `Çalışıyor · ${Math.min(doneSteps + 1, task.steps.length)}/${task.steps.length}`
       : STATUS_LABEL[task.status];
 
   return (
@@ -83,6 +88,16 @@ export function TaskCard({ task, events, onLoadEvents, onError }: Props) {
       <div className="px-4 py-4">
         {task.status === "planning" && !plan && (
           <LiveLine text={lineText(lastLine) || "Orchestrator isteği analiz ediyor"} />
+        )}
+
+        {isSession && (
+          <>
+            <h3 className="text-[15px] font-medium text-fg">Düzenleme oturumu</h3>
+            <p className="mt-1 text-[13px] text-dim">
+              Her mesajın projenin bir kopyasında hemen uygulanır. Beğenince birleştir.
+            </p>
+            {task.steps.length > 0 && <StepProgress steps={task.steps} />}
+          </>
         )}
 
         {plan && (
@@ -139,7 +154,10 @@ export function TaskCard({ task, events, onLoadEvents, onError }: Props) {
                 {task.branch} → {task.base_branch}
               </span>
             </div>
-            <DiffView taskId={task.id} version={`${task.stage}-${task.steps.length}`} />
+            <DiffView
+              taskId={task.id}
+              version={`${task.stage}-${task.steps.map((s) => s.status).join()}`}
+            />
           </div>
         )}
 
@@ -174,7 +192,26 @@ export function TaskCard({ task, events, onLoadEvents, onError }: Props) {
         )}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
+          {review && isSession && (
+            <>
+              <Btn primary disabled={busy} onClick={() => decide("approve")}>
+                Birleştir
+              </Btn>
+              <Btn
+                disabled={busy || !task.steps.some((s) => s.status === "done" && s.commit)}
+                onClick={() => decide("undo_last")}
+              >
+                <span className="flex items-center gap-1.5">
+                  <Undo2 size={13} /> Son değişikliği geri al
+                </span>
+              </Btn>
+              <Btn disabled={busy} onClick={() => decide("reject")}>
+                Hepsini at
+              </Btn>
+            </>
+          )}
           {task.status === "waiting_approval" &&
+            !(review && isSession) &&
             (changing ? (
               <>
                 <Btn primary disabled={busy || !note.trim()} onClick={() => decide("request_changes", note)}>
@@ -221,6 +258,11 @@ export function TaskCard({ task, events, onLoadEvents, onError }: Props) {
         </div>
       </div>
 
+      {review && isSession && (
+        <p className="border-t border-line px-4 py-2 font-mono text-[10.5px] text-faint">
+          Başka bir değişiklik için Düzenle modunda yazmaya devam et.
+        </p>
+      )}
       {logOpen && <EventLog events={events} />}
     </div>
   );
@@ -247,6 +289,7 @@ const STEP_DOT: Record<TaskStepState["status"], string> = {
   running: "bg-white animate-pulse-dot",
   done: "bg-white",
   failed: "bg-danger",
+  reverted: "ring-1 ring-faint",
 };
 
 function StepProgress({ steps }: { steps: TaskStepState[] }) {
@@ -263,12 +306,19 @@ function StepRow({ step }: { step: TaskStepState }) {
   const [open, setOpen] = useState(false);
   const title = step.kind === "revision" ? `Geri bildirim: ${step.description}` : step.title;
   return (
-    <li className={`bg-raised/60 px-3 py-2.5 ${step.status === "pending" ? "opacity-60" : ""}`}>
+    <li
+      className={`bg-raised/60 px-3 py-2.5 ${
+        step.status === "pending" || step.status === "reverted" ? "opacity-50" : ""
+      }`}
+    >
       <div className="flex gap-3">
         <span className={`mt-[7px] inline-block size-1.5 shrink-0 rounded-full ${STEP_DOT[step.status]}`} />
         <div className="min-w-0 flex-1">
           <StepHeader title={title} agent={step.agent} />
-          {step.summary && (
+          {step.status === "reverted" && (
+            <div className="mt-0.5 font-mono text-[10.5px] text-faint">geri alındı</div>
+          )}
+          {step.summary && step.status !== "reverted" && (
             <>
               <p
                 className={`mt-1 whitespace-pre-wrap text-[13px] leading-relaxed text-dim ${
@@ -286,7 +336,7 @@ function StepRow({ step }: { step: TaskStepState }) {
             </>
           )}
         </div>
-        {step.commit && (
+        {step.commit && step.status !== "reverted" && (
           <span className="shrink-0 pt-0.5 font-mono text-[10.5px] text-faint" title="Bu adımın commit'i">
             {step.commit.slice(0, 7)}
           </span>

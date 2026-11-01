@@ -35,6 +35,12 @@ class StepStatus(StrEnum):
     RUNNING = "running"
     DONE = "done"
     FAILED = "failed"
+    REVERTED = "reverted"  # its commit was undone by the user
+
+
+class TaskKind(StrEnum):
+    PLAN = "plan"  # plan → approve → execute → review → merge
+    SESSION = "session"  # quick edits: each message is applied right away, then reviewed
 
 
 class ApprovalStatus(StrEnum):
@@ -76,6 +82,7 @@ class Task(Base):
     context: Mapped[str | None] = mapped_column(Text)
     title: Mapped[str] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(32), default=TaskStatus.PLANNING)
+    kind: Mapped[str] = mapped_column(String(16), default=TaskKind.PLAN, server_default="plan")
     plan: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     adapter_id: Mapped[str | None] = mapped_column(String(64))
     error: Mapped[str | None] = mapped_column(Text)
@@ -107,7 +114,7 @@ class TaskStep(Base):
     title: Mapped[str] = mapped_column(String(300))
     agent: Mapped[str] = mapped_column(String(32))
     description: Mapped[str] = mapped_column(Text, default="")
-    kind: Mapped[str] = mapped_column(String(16), default="plan")  # plan | revision
+    kind: Mapped[str] = mapped_column(String(16), default="plan")  # plan | revision | edit
     status: Mapped[str] = mapped_column(String(16), default=StepStatus.PENDING)
     summary: Mapped[str | None] = mapped_column(Text)
     commit: Mapped[str | None] = mapped_column(String(64))

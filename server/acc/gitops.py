@@ -122,10 +122,23 @@ async def commit_all(wt: Path, message: str) -> str | None:
     return (await git(wt, "rev-parse", "HEAD")).strip()
 
 
+async def head(wt: Path) -> str:
+    return (await git(wt, "rev-parse", "HEAD")).strip()
+
+
+async def undo_commit(wt: Path, commit: str) -> None:
+    """Drop `commit`, which must be the worktree's HEAD (the task branch only)."""
+    if await head(wt) != commit:
+        raise GitError("Son değişiklik en üstte değil; geri alınamadı.")
+    await git(wt, "reset", "-q", "--hard", f"{commit}~1")
+
+
 async def discard(wt: Path) -> None:
     """Drop uncommitted changes in the worktree (ignored files are left alone)."""
     await git(wt, "reset", "-q", "--hard", "HEAD")
-    await git(wt, "clean", "-fdq")
+    # Keep installed dependencies and Orbit's caches; they are never committed anyway.
+    keep = [arg for p in JUNK for arg in ("-e", p)]
+    await git(wt, "clean", "-fdq", *keep)
 
 
 async def diff(wt: Path, base: str) -> dict[str, Any]:

@@ -118,6 +118,10 @@ export default function App() {
   }, []);
 
   const send = async (text: string) => {
+    if (mode === "edit" && projectId === null) {
+      showError("Düzenleme için önce bir proje seç.");
+      throw new Error("no project");
+    }
     try {
       let id = chatId;
       if (id === null) {
