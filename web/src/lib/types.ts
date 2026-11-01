@@ -1,0 +1,124 @@
+export type TaskStatus =
+  | "planning"
+  | "waiting_approval"
+  | "queued"
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type Decision = "approve" | "reject" | "request_changes" | "cancel" | "retry";
+
+export interface Project {
+  id: number;
+  name: string;
+  path: string;
+  created_at: string;
+}
+
+export interface Chat {
+  id: number;
+  title: string;
+  project_id: number | null;
+  created_at: string;
+}
+
+export interface Message {
+  id: number;
+  chat_id: number;
+  role: "user" | "assistant" | "system" | "task";
+  content: string;
+  task_id: number | null;
+  created_at: string;
+}
+
+export interface PlanStep {
+  id: string;
+  title: string;
+  agent: string;
+  description: string;
+  depends_on: string[];
+  writes_files: boolean;
+}
+
+export interface Plan {
+  title: string;
+  summary: string;
+  steps: PlanStep[];
+  risks: string[];
+}
+
+export interface Task {
+  id: number;
+  chat_id: number;
+  project_id: number | null;
+  title: string;
+  request: string;
+  status: TaskStatus;
+  plan: Plan | null;
+  adapter_id: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskEvent {
+  id: number;
+  task_id: number;
+  kind: "text" | "tool" | "log" | "usage" | "error";
+  data: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface Approval {
+  id: number;
+  task_id: number;
+  kind: string;
+  status: string;
+  note: string | null;
+  created_at: string;
+  decided_at: string | null;
+  task: Task;
+}
+
+export interface UsageWindow {
+  name: string;
+  utilization: number | null;
+  resets_at: number | null;
+  status: string | null;
+}
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  provider: string;
+  billing: "subscription" | "local_free" | "free_tier" | "paid_api";
+  auth_method: string;
+  requires_membership: boolean;
+  requires_api_key: boolean;
+  notes: string;
+  capabilities: Record<string, boolean>;
+  state: string;
+  detail: string;
+  usage: {
+    source: "verified" | "estimated" | "user" | "unknown";
+    detail: string;
+    observed_at: number | null;
+    windows: UsageWindow[];
+  };
+}
+
+export interface Agent {
+  id: string;
+  name: string;
+  description: string;
+  tools: string[];
+  adapters: string[];
+  writes_files: boolean;
+}
+
+export type WsMessage =
+  | { type: "task"; task: Task }
+  | { type: "event"; event: TaskEvent }
+  | { type: "approvals_changed" };

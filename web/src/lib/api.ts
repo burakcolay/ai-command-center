@@ -1,0 +1,62 @@
+import type {
+  Agent,
+  Approval,
+  Chat,
+  Decision,
+  Message,
+  ModelInfo,
+  Project,
+  Task,
+  TaskEvent,
+} from "./types";
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const detail = typeof body.detail === "string" ? body.detail : `Hata ${res.status}`;
+    throw new ApiError(res.status, detail);
+  }
+  return res.status === 204 ? (undefined as T) : res.json();
+}
+
+const post = <T>(path: string, body: unknown) =>
+  req<T>(path, { method: "POST", body: JSON.stringify(body) });
+
+export const api = {
+  projects: () => req<Project[]>("/projects"),
+  createProject: (name: string, path?: string) =>
+    post<Project>("/projects", { name, path: path || null }),
+  removeProject: (id: number) => req<void>(`/projects/${id}`, { method: "DELETE" }),
+
+  chats: () => req<Chat[]>("/chats"),
+  createChat: (project_id: number | null) => post<Chat>("/chats", { project_id }),
+  chat: (id: number) => req<{ chat: Chat; messages: Message[]; tasks: Task[] }>(`/chats/${id}`),
+  removeChat: (id: number) => req<void>(`/chats/${id}`, { method: "DELETE" }),
+  send: (chatId: number, content: string, project_id: number | null) =>
+    post<{ chat: Chat; messages: Message[]; task: Task }>(`/chats/${chatId}/messages`, {
+      content,
+      project_id,
+    }),
+
+  events: (taskId: number) => req<TaskEvent[]>(`/tasks/${taskId}/events`),
+  decide: (taskId: number, decision: Decision, note?: string) =>
+    post<Task>(`/tasks/${taskId}/decision`, { decision, note: note || null }),
+  approvals: () => req<Approval[]>("/approvals"),
+
+  models: (fresh = false) => req<ModelInfo[]>(`/models${fresh ? "?fresh=true" : ""}`),
+  agents: () => req<Agent[]>("/agents"),
+  system: () => req<{ demo_mode: boolean; paid_api_allowed: boolean }>("/system"),
+};

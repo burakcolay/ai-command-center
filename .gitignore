@@ -1,0 +1,21 @@
+# runtime data
+/data/
+/workspace/projects/*
+!/workspace/projects/.gitkeep
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# web
+node_modules/
+web/dist/
+*.tsbuildinfo
+
+# secrets
+.env
+.env.*
+.DS_Store
