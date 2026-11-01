@@ -117,7 +117,7 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  const send = async (text: string) => {
+  const send = async (text: string, attachments: string[] = []) => {
     if (mode === "edit" && projectId === null) {
       showError("Düzenleme için önce bir proje seç.");
       throw new Error("no project");
@@ -129,7 +129,7 @@ export default function App() {
         setChatId(id);
         setMessages([]);
       }
-      const r = await api.send(id, text, projectId, mode, chatModel);
+      const r = await api.send(id, text, projectId, mode, chatModel, attachments);
       setMessages((prev) => [...prev, ...r.messages.filter((x) => !prev.some((y) => y.id === x.id))]);
       const task = r.task;
       if (task) setTasks((prev) => ({ ...prev, [task.id]: task }));

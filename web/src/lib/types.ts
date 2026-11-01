@@ -77,7 +77,13 @@ export interface Message {
   content: string;
   status: "streaming" | "done" | "error" | "cancelled";
   adapter_id: string | null;
-  meta: { kind?: "research"; report_path?: string } | null;
+  meta: {
+    kind?: "research" | "design";
+    report_path?: string;
+    attachments?: string[];
+    variants?: DesignVariant[];
+    viewport?: "phone" | "tablet" | "desktop";
+  } | null;
   task_id: number | null;
   created_at: string;
 }
@@ -211,7 +217,15 @@ export interface Agent {
   writes_files: boolean;
 }
 
-export type ComposerMode = "chat" | "research" | "edit" | "task";
+export type ComposerMode = "chat" | "research" | "design" | "edit" | "task";
+
+export interface DesignVariant {
+  n: number;
+  title: string;
+  idea: string;
+  image: string | null;
+  attachment: string;
+}
 
 export type WsMessage =
   | { type: "message"; message: Message }

@@ -18,11 +18,12 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from acc import config, memory, serialize
+from acc import attachments, config, designs, memory, serialize
 from acc.adapters import Registry
 from acc.adapters.base import AdapterError, RunRequest
 from acc.agents import AGENTS, CHAT_SYSTEM, RESEARCH_SYSTEM, effort_for
 from acc.db import session
+from acc.designs import DESIGN_SYSTEM
 from acc.events import broker
 from acc.models import Chat, Message, Project, Task
 
@@ -185,13 +186,25 @@ class ChatService:
         with session() as s:
             m = s.get(Message, message_id)
             chat_id, requested = m.chat_id, m.adapter_id
-            research = (m.meta or {}).get("kind") == "research"
+            kind = (m.meta or {}).get("kind")
+            research, design = kind == "research", kind == "design"
             user = s.scalars(
                 select(Message)
                 .where(Message.chat_id == chat_id, Message.id < message_id, Message.role == "user")
                 .order_by(Message.id.desc())
             ).first()
             user_id, question = user.id, user.content
+            attached = (user.meta or {}).get("attachments") or []
+            earlier_designs = s.scalars(
+                select(Message.id)
+                .where(
+                    Message.chat_id == chat_id,
+                    Message.id < message_id,
+                    Message.status == "done",
+                    Message.role == "assistant",
+                )
+                .order_by(Message.id.desc())
+            ).all()
 
         await self._maybe_compact(chat_id, user_id)
 
@@ -219,6 +232,13 @@ class ChatService:
             cwd = config.DATA_DIR / "chat-empty"
             cwd.mkdir(parents=True, exist_ok=True)
             tools, note = WEB_ONLY, ""
+        if design and adapter.capabilities.tools:
+            tools = [t for t in tools if t in ("Read", "Glob", "Grep")]
+        read_dirs = []
+        if adapter.capabilities.tools and (attached or design):
+            read_dirs = attachments.read_dirs()  # screenshots and earlier designs
+            if "Read" not in tools:
+                tools = [*tools, "Read"]
 
         prompt = note
         if project_dir:
@@ -226,16 +246,23 @@ class ChatService:
         prompt += memory.prompt_block(project_name)
         if history:
             prompt += f"SOHBET GEÇMİŞİ:\n{history}\n\n"
+        if design:
+            rounds = [mid for mid in earlier_designs if designs.folder(mid).is_dir()][:2]
+            prompt += designs.previous_block(list(reversed(rounds)))
+        prompt += attachments.prompt_block(attached)
         prompt += f"KULLANICININ SON MESAJI:\n{question}"
 
+        system = DESIGN_SYSTEM if design else RESEARCH_SYSTEM if research else CHAT_SYSTEM
         req = RunRequest(
             prompt=prompt,
             cwd=cwd,
-            system_prompt=RESEARCH_SYSTEM if research else CHAT_SYSTEM,
+            system_prompt=system,
             tools=tools,
             permission_mode="dontAsk",
-            stream_text=True,
+            stream_text=not design,
+            json_schema=designs.DESIGN_SCHEMA if design else None,
             effort=effort_for("research" if research else "chat"),
+            read_dirs=read_dirs,
         )
         run_id = uuid.uuid4().hex
         self._runs[message_id] = (adapter.info.id, run_id)
@@ -251,6 +278,11 @@ class ChatService:
                     broker.publish(
                         {"type": "message_activity", "message_id": message_id, "tool": ev.data}
                     )
+                elif ev.kind == "result" and design:
+                    await self._finish_design(
+                        message_id, ev.data.get("structured"), adapter.info.id
+                    )
+                    return
                 elif ev.kind == "result":
                     text = ev.data.get("text") or "".join(buf)
                     meta = None
@@ -275,6 +307,30 @@ class ChatService:
         finally:
             self._runs.pop(message_id, None)
             self._cancelling.discard(message_id)
+
+    async def _finish_design(self, message_id: int, result: Any, adapter_id: str) -> None:
+        variants = (result or {}).get("variants") if isinstance(result, dict) else None
+        if not variants or not all(isinstance(v, dict) and v.get("html") for v in variants):
+            self._finish(message_id, "⚠ Model geçerli tasarım döndürmedi.", "error", adapter_id)
+            return
+        broker.publish(
+            {
+                "type": "message_activity",
+                "message_id": message_id,
+                "tool": {
+                    "name": "Ekran görüntüleri",
+                    "input": {"query": f"{len(variants)} tasarım"},
+                },
+            }
+        )
+        rendered = await designs.render(message_id, result.get("viewport", "phone"), variants)
+        self._finish(
+            message_id,
+            designs.summary_text(rendered, result.get("note")),
+            "done",
+            adapter_id,
+            {"variants": rendered, "viewport": result.get("viewport", "phone")},
+        )
 
     async def cancel(self, message_id: int) -> dict[str, Any]:
         with session() as s:

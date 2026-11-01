@@ -153,6 +153,8 @@ class ClaudeCodeAdapter(ModelAdapter):
             args += ["--model", model]
         if req.effort:
             args += ["--effort", req.effort]
+        for d in req.read_dirs:
+            args += ["--add-dir", str(d)]
         if req.stream_text:
             args += ["--include-partial-messages"]
         return args

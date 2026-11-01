@@ -125,6 +125,19 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 - Rapor `MEMORY_DIR/Araştırmalar/` altına kaydedilir.
 - Ölçülen gerçek bir çalıştırma: ~8 dakika, 5 saatlik kotanın ~%5'i, 43 kaynak linki.
 
+### Görseller ve tasarım varyantları
+
+- **Yüklemeler** (`attachments.py`):
+  - Dosya türü uzantıdan değil ilk baytlardan belirlenir; yalnızca PNG, JPEG, WebP ve GIF kabul edilir, en fazla 10 MB.
+  - Görseller `data/uploads/` klasörüne kaydedilir.
+  - Ek kimliği ya 32 karakterlik hex bir dosya kimliğidir ya da `design:<mesaj>:<n>` biçimindedir; bu ikisi dışındaki her şey reddedilir, bu da yol geçişini (path traversal) engeller.
+  - Modele yalnızca dosya yolları ve `--add-dir` (okuma) verilir.
+- **Tasarım modu** (`designs.py`):
+  - Model, şemaya uygun JSON olarak 2-4 bağımsız HTML ekran döndürür; dosya yazma yetkisi yoktur, yalnızca okuma araçları vardır.
+  - ORBIT bu HTML'leri Playwright Chromium'da çizer. Sayfada JavaScript kapalıdır ve tüm ağ istekleri reddedilir. Arayüz yalnızca PNG'leri gösterir.
+  - Önceki turların HTML'leri sonraki tura okunabilir olarak verilir; böylece "2'nin düzeni, 1'in renkleri" çalışır.
+  - "Bunu uygula", varyantın PNG'sini ve HTML'ini düzenleme oturumuna ek olarak geçirir.
+
 ### Düzenleme oturumu (`tasks.kind = "session"`)
 
 - **Akış:** Planlama yoktur. Sohbetteki her "Düzenle" mesajı açık oturuma bir `edit` adımı ekler (`Orchestrator.add_edit`). Ardından adımlar, kontroller ve inceleme aynı yürütme motoruyla yapılır.
@@ -206,7 +219,8 @@ Her aktif durumdan cancel ──► cancelled
 - [x] **Şablonlar** (hazır ve kullanıcı)
 - [x] **Güvenlik sertleştirmesi:** CSRF, gizli dosya erişimi, log maskeleme, özel veri klasörü, temiz alt süreç ortamı
 - [x] **Düzenleme oturumu** (hızlı değişiklik, geri alma, birleştirme)
-- [ ] **Sıradaki:** görsel ekleme + tasarım varyantları; ardından model yönlendirici
+- [x] **Görsel ekleme + tasarım varyantları**
+- [ ] **Sıradaki:** model yönlendirici
 - [ ] **Diğer adaylar:** GitHub entegrasyonu (Faz 4: branch, PR hazırlama — push/merge onaylı); web projeleri için görsel önizleme
 - [ ] Grok Build adaptörü (ücretsiz erişim doğrulanırsa)
 - [ ] Faz 4–8: dokümandaki sırayla

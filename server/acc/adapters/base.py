@@ -104,6 +104,7 @@ class RunRequest:
     settings: dict[str, Any] | None = None  # extra provider settings (e.g. sandbox policy)
     stream_text: bool = False  # emit "delta" events while the answer is being written
     effort: str | None = None  # how hard to think: low | medium | high | xhigh | max
+    read_dirs: list[Path] = field(default_factory=list)  # extra folders the model may read
 
 
 EventKind = Literal["text", "delta", "tool", "log", "usage", "result", "error"]

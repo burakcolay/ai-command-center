@@ -38,7 +38,14 @@ Port 7420 doluysa başka bir port seçin (örnek: `make start PORT=7500`). Sunuc
 
 ## Nasıl kullanılır
 
-Yazma kutusunda dört mod vardır: **Sohbet**, **Araştırma**, **Düzenle** ve **Görev**.
+Yazma kutusunda beş mod vardır: **Sohbet**, **Araştırma**, **Tasarım**, **Düzenle** ve **Görev**.
+
+- **Tasarım:** "Bu ekranı beğenmedim, 3 alternatif" gibi istekler için.
+  - Birbirinden gerçekten farklı 2-3 ekran çizilir ve görselleri yan yana gösterilir.
+  - "2'nin düzeni, 1'in renkleri" gibi yeni turlar istenebilir.
+  - **Bunu uygula**, seçilen tasarımı referans olarak Düzenle moduna aktarır.
+  - Tasarımlar internet erişimi ve JavaScript kapalı bir tarayıcıda çizilir.
+- **Görsel ekleme:** Ataç butonu, yapıştırma (⌘V) veya sürükle-bırak ile ekran görüntüsü eklenebilir; her modda Claude görseli okur.
 
 - **Düzenle:** Küçük değişiklikler için. Plan ve onay adımı yoktur; her mesaj projenin izole bir kopyasında hemen uygulanır, kalite kontrolleri çalışır ve diff önüne gelir. Mesaj yazdıkça aynı oturuma yeni adımlar eklenir. **Son değişikliği geri al**, **Birleştir** ve **Hepsini at** butonları vardır.
 

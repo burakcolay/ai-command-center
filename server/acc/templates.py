@@ -4,6 +4,17 @@ the user fills in."""
 
 BUILTIN = [
     {
+        "id": "b-design",
+        "title": "Ekran alternatifleri",
+        "mode": "design",
+        "description": "Bir ekran için 3 farklı tasarım, yan yana",
+        "body": (
+            "[ekran adı, ör. giriş ekranı] için birbirinden farklı 3 tasarım çiz. Mevcut "
+            "tasarımın beğenmediğim yanı: [ne beğenilmedi]. "
+            "Hedef his: [ör. sade, premium, eğlenceli]."
+        ),
+    },
+    {
         "id": "b-market",
         "title": "Pazar araştırması",
         "mode": "research",

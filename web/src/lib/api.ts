@@ -73,13 +73,17 @@ export const api = {
     project_id: number | null,
     mode: ComposerMode,
     model: string | null,
+    attachments: string[],
   ) =>
     post<{ chat: Chat; messages: Message[]; task: Task | null }>(`/chats/${chatId}/messages`, {
       content,
       project_id,
       mode,
       model: mode === "chat" ? model : null,
+      attachments,
     }),
+  upload: (name: string, data: string) =>
+    post<{ id: string; name: string; mime: string }>("/uploads", { name, data }),
   cancelMessage: (id: number) => post<Message>(`/messages/${id}/cancel`, {}),
 
   diff: (taskId: number) => req<TaskDiff>(`/tasks/${taskId}/diff`),

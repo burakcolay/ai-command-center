@@ -14,6 +14,12 @@ PORT = int(os.environ.get("ACC_PORT", "7420"))
 # Obsidian vault to see and link the notes there (plain files, no plugin needed).
 MEMORY_DIR = Path(os.environ.get("ACC_MEMORY_DIR", DATA_DIR / "memory")).expanduser()
 
+# Images the user attaches, and rendered design variants (screenshots + their HTML).
+UPLOADS_DIR = DATA_DIR / "uploads"
+DESIGNS_DIR = DATA_DIR / "designs"
+# Chromium for rendering designs; default is Playwright's own (`playwright install chromium`).
+CHROMIUM_PATH = os.environ.get("ACC_CHROMIUM") or None
+
 # Local models via Ollama.
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 

@@ -56,6 +56,9 @@ class MockAdapter(ModelAdapter):
                 await asyncio.sleep(self.delay / 10)
             yield AdapterEvent("result", {"text": reply})
             return
+        if req.json_schema and "variants" in req.json_schema.get("properties", {}):
+            yield AdapterEvent("result", {"text": "", "structured": _demo_designs()})
+            return
         if req.json_schema is None:  # an execution step, not planning
             async for ev in self._step(req, run_id):
                 yield ev
@@ -116,3 +119,34 @@ class MockAdapter(ModelAdapter):
 
     async def cancel(self, run_id: str) -> None:
         self._cancelled.add(run_id)
+
+
+def _demo_designs() -> dict:
+    def screen(bg: str, fg: str, title: str) -> str:
+        return (
+            f"<!doctype html><html><body style='margin:0;height:852px;background:{bg};"
+            f"color:{fg};font:600 28px -apple-system,system-ui;display:grid;place-items:center'>"
+            f"{title}<script>document.body.style.background='red'</script></body></html>"
+        )
+
+    return {
+        "viewport": "phone",
+        "variants": [
+            {
+                "title": "Sade",
+                "idea": "Demo: tek odaklı, bol boşluk.",
+                "html": screen("#000", "#fff", "Sade"),
+            },
+            {
+                "title": "Kartlı",
+                "idea": "Demo: bilgi kartlarla gruplanır.",
+                "html": screen("#f4f4f4", "#111", "Kartlı"),
+            },
+            {
+                "title": "Yoğun",
+                "idea": "Demo: tek bakışta çok bilgi.",
+                "html": screen("#0b1f3a", "#e8eef7", "Yoğun"),
+            },
+        ],
+        "note": "Demo tasarımları.",
+    }

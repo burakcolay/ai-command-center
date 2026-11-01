@@ -1,12 +1,13 @@
-import { Telescope, Zap } from "lucide-react";
+import { Palette, Telescope, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Composer } from "../components/Composer";
 import { DotMatrix } from "../components/DotMatrix";
 import { TaskCard } from "../components/TaskCard";
+import { attachmentUrl, type PendingAttachment } from "../lib/attachments";
 import { toolTarget } from "../lib/format";
-import type { ComposerMode, Message, Project, Task, TaskEvent } from "../lib/types";
+import type { ComposerMode, DesignVariant, Message, Project, Task, TaskEvent } from "../lib/types";
 
 const SUGGESTIONS: Record<ComposerMode, string[]> = {
   research: [
@@ -17,6 +18,10 @@ const SUGGESTIONS: Record<ComposerMode, string[]> = {
     "Aklımda bir uygulama fikri var, birlikte netleştirelim",
     "Bu projenin mimarisini bana anlat",
     "Bu projede en çok neyi iyileştirmeliyim?",
+  ],
+  design: [
+    "Giriş ekranı için birbirinden farklı 3 tasarım",
+    "Ayarlar sayfasını daha sade gösteren 2 alternatif",
   ],
   edit: [
     "Ana ekrandaki başlığı daha büyük ve kalın yap",
@@ -44,7 +49,7 @@ interface Props {
   demoMode: boolean;
   onModeChange: (m: ComposerMode) => void;
   onProjectChange: (id: number | null) => void;
-  onSend: (text: string) => Promise<void>;
+  onSend: (text: string, attachments: string[]) => Promise<void>;
   onStop: (messageId: number) => void;
   onLoadEvents: (taskId: number) => void;
   onError: (msg: string) => void;
@@ -52,7 +57,11 @@ interface Props {
 
 export function ChatView(p: Props) {
   const scroller = useRef<HTMLDivElement>(null);
-  const [prefill, setPrefill] = useState<{ text: string; nonce: number }>();
+  const [prefill, setPrefill] = useState<{
+    text: string;
+    nonce: number;
+    attachments?: PendingAttachment[];
+  }>();
   const last = p.messages.at(-1);
   const lastTaskStatus = last?.task_id ? p.tasks[last.task_id]?.status : undefined;
   const streaming = p.messages.find((m) => m.status === "streaming");
@@ -67,6 +76,16 @@ export function ChatView(p: Props) {
   const convert = () => {
     p.onModeChange("task");
     setPrefill({ text: CONVERT_TEXT, nonce: Date.now() });
+  };
+
+  // "Bunu uygula": the chosen design goes to an edit session as a reference (PNG + HTML).
+  const applyDesign = (v: DesignVariant) => {
+    p.onModeChange("edit");
+    setPrefill({
+      text: `Tasarım ${v.n}'i (${v.title}) projede uygula. Ekteki görseli ve HTML'ini referans al.`,
+      nonce: Date.now(),
+      attachments: [{ id: v.attachment, name: v.title, preview: attachmentUrl(v.attachment) }],
+    });
   };
 
   const composer = (
@@ -102,7 +121,7 @@ export function ChatView(p: Props) {
             {SUGGESTIONS[p.mode].map((s) => (
               <button
                 key={s}
-                onClick={() => void p.onSend(s)}
+                onClick={() => void p.onSend(s, [])}
                 className="rounded-full border border-line px-3 py-1.5 text-[12.5px] text-dim transition-colors hover:border-white/30 hover:text-fg"
               >
                 {s}
@@ -116,6 +135,8 @@ export function ChatView(p: Props) {
                 research:
                   "Araştırma modu onlarca kaynak tarar, kaynakçalı bir rapor yazar ve kaydeder. Birkaç dakika sürebilir.",
                 edit: "Düzenle modunda her mesaj hemen uygulanır (projenin bir kopyasında). Diff'i görüp birleştirirsin.",
+                design:
+                  "Tasarım modu 2-3 farklı ekran çizer ve görsellerini yan yana gösterir. Beğendiğini uygulatırsın.",
                 task: "Görev modunda Orchestrator bir plan çıkarır; onayından sonra ajanlar uygular.",
               }[p.mode]
             }
@@ -139,8 +160,23 @@ export function ChatView(p: Props) {
             if (m.role === "user") {
               return (
                 <div key={m.id} className="flex justify-end animate-rise">
-                  <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-white/[0.08] px-4 py-2.5 text-[14.5px] leading-relaxed text-fg">
-                    {m.content}
+                  <div className="flex max-w-[85%] flex-col items-end gap-2">
+                    {m.meta?.attachments && m.meta.attachments.length > 0 && (
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {m.meta.attachments.map((id) => (
+                          <a key={id} href={attachmentUrl(id)} target="_blank" rel="noreferrer">
+                            <img
+                              src={attachmentUrl(id)}
+                              alt="ek"
+                              className="max-h-40 rounded-xl border border-line-strong object-cover"
+                            />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    <div className="whitespace-pre-wrap rounded-2xl rounded-br-sm bg-white/[0.08] px-4 py-2.5 text-[14.5px] leading-relaxed text-fg">
+                      {m.content}
+                    </div>
                   </div>
                 </div>
               );
@@ -171,6 +207,7 @@ export function ChatView(p: Props) {
                 activity={p.activity[m.id]}
                 canConvert={m.id === lastAssistant?.id && m.status === "done" && last?.id === m.id}
                 onConvert={convert}
+                onApplyDesign={applyDesign}
               />
             );
           })}
@@ -186,14 +223,18 @@ function AssistantMessage({
   activity,
   canConvert,
   onConvert,
+  onApplyDesign,
 }: {
   message: Message;
   activity?: string;
   canConvert: boolean;
   onConvert: () => void;
+  onApplyDesign: (v: DesignVariant) => void;
 }) {
   const streaming = m.status === "streaming";
   const research = m.meta?.kind === "research";
+  const design = m.meta?.kind === "design";
+  const variants = m.meta?.variants;
   const report = m.meta?.report_path;
   return (
     <div className="animate-rise">
@@ -202,7 +243,14 @@ function AssistantMessage({
           <Telescope size={11} /> ARAŞTIRMA RAPORU
         </div>
       )}
-      {m.content ? (
+      {design && (
+        <div className="mb-3 flex items-center gap-2 font-mono text-[10.5px] tracking-[0.14em] text-faint">
+          <Palette size={11} /> TASARIM ÖNERİLERİ
+        </div>
+      )}
+      {variants && variants.length > 0 ? (
+        <DesignGrid variants={variants} wide={m.meta?.viewport === "desktop"} onApply={onApplyDesign} />
+      ) : m.content ? (
         <div className={m.status === "error" ? "md text-danger" : "md"}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
         </div>
@@ -219,7 +267,14 @@ function AssistantMessage({
             ))}
           </span>
           <span className="truncate">
-            {activity ?? (m.content ? "yazıyor" : research ? "kaynaklar taranıyor" : "düşünüyor")}
+            {activity ??
+              (m.content
+                ? "yazıyor"
+                : research
+                  ? "kaynaklar taranıyor"
+                  : design
+                    ? "tasarımlar çiziliyor"
+                    : "düşünüyor")}
           </span>
         </div>
       )}
@@ -240,6 +295,53 @@ function AssistantMessage({
           <Zap size={11} /> Göreve dönüştür
         </button>
       )}
+    </div>
+  );
+}
+
+function DesignGrid({
+  variants,
+  wide,
+  onApply,
+}: {
+  variants: DesignVariant[];
+  wide: boolean;
+  onApply: (v: DesignVariant) => void;
+}) {
+  return (
+    <div className={`grid gap-4 ${wide ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"}`}>
+      {variants.map((v) => (
+        <figure key={v.n} className="flex flex-col">
+          {v.image ? (
+            <a href={v.image} target="_blank" rel="noreferrer" title="Büyük aç">
+              <img
+                src={v.image}
+                alt={v.title}
+                className={`w-full border border-line-strong bg-raised object-cover object-top ${
+                  wide ? "rounded-lg" : "rounded-[22px]"
+                }`}
+              />
+            </a>
+          ) : (
+            <div className="grid aspect-[393/852] place-items-center rounded-[22px] border border-dashed border-line-strong px-4 text-center text-[12px] text-faint">
+              Önizleme oluşturulamadı (Chromium kurulu mu? make setup)
+            </div>
+          )}
+          <figcaption className="mt-2.5">
+            <div className="flex items-baseline gap-2">
+              <span className="font-mono text-[11px] text-faint">{v.n}</span>
+              <span className="text-[14px] font-medium text-fg">{v.title}</span>
+            </div>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-dim">{v.idea}</p>
+            <button
+              onClick={() => onApply(v)}
+              className="mt-2 rounded-full border border-line-strong px-3 py-1 font-mono text-[11px] text-fg transition-colors hover:border-white hover:bg-white hover:text-black"
+            >
+              Bunu uygula
+            </button>
+          </figcaption>
+        </figure>
+      ))}
     </div>
   );
 }

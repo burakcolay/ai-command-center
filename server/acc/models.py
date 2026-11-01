@@ -80,6 +80,8 @@ class Task(Base):
     request: Mapped[str] = mapped_column(Text)
     # Conversation that led to this task (snapshot), passed to the planner and the agents.
     context: Mapped[str | None] = mapped_column(Text)
+    # Attachment ids (images, chosen designs) the agents should look at.
+    attachments: Mapped[list[str] | None] = mapped_column(JSON)
     title: Mapped[str] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(32), default=TaskStatus.PLANNING)
     kind: Mapped[str] = mapped_column(String(16), default=TaskKind.PLAN, server_default="plan")

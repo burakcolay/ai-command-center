@@ -70,6 +70,8 @@ if config.WEB_DIST.is_dir():
 
     @app.get("/{path:path}", include_in_schema=False)
     def spa(path: str):
+        if path == "api" or path.startswith("api/"):  # unknown API routes are real 404s
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
         f = (config.WEB_DIST / path).resolve()
         if path and f.is_file() and f.is_relative_to(config.WEB_DIST):
             return FileResponse(f)

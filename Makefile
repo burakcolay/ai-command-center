@@ -10,7 +10,7 @@ export ACC_MEMORY_DIR := $(MEMORY_DIR)
 endif
 
 setup:
-	cd server && uv sync
+	cd server && uv sync && uv run playwright install chromium
 	cd tools && npm install
 	cd web && npm install && npm run build
 

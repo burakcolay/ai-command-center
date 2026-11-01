@@ -1,13 +1,27 @@
+import base64
+import binascii
 import re
 import subprocess
 from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from acc import checks, config, gitops, memory, notify, prefs, serialize, templates
+from acc import (
+    attachments,
+    checks,
+    config,
+    designs,
+    gitops,
+    memory,
+    notify,
+    prefs,
+    serialize,
+    templates,
+)
 from acc.adapters import registry
 from acc.agents import AGENTS
 from acc.chat import ChatService, context_for_task
@@ -183,7 +197,8 @@ class MessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=100_000)  # long specs can be pasted
     project_id: int | None = None
     # chat: talk it through (nothing changes) · task: plan → approve → execute
-    mode: Literal["chat", "task", "research", "edit"] = "task"
+    mode: Literal["chat", "task", "research", "edit", "design"] = "task"
+    attachments: list[str] = Field(default_factory=list, max_length=6)
     # chat only: which model answers (None = default, Claude). e.g. "ollama"
     model: str | None = Field(default=None, max_length=64)
 
@@ -239,13 +254,23 @@ async def post_message(chat_id: int, body: MessageIn):
             if s.get(Project, body.project_id) is None:
                 raise HTTPException(400, "Proje bulunamadı.")
             c.project_id = body.project_id
-        if body.mode in ("chat", "research") and s.scalar(
+        for attachment_id in body.attachments:
+            try:
+                attachments.resolve(attachment_id)
+            except attachments.AttachmentError as e:
+                raise HTTPException(400, str(e)) from None
+        if body.mode in ("chat", "research", "design") and s.scalar(
             select(Message.id).where(Message.chat_id == chat_id, Message.status == "streaming")
         ):
             raise HTTPException(409, "Önceki yanıt hâlâ yazılıyor.")
         if c.title == "Yeni sohbet":
             c.title = content[:60]
-        user_msg = Message(chat_id=chat_id, role="user", content=content)
+        user_msg = Message(
+            chat_id=chat_id,
+            role="user",
+            content=content,
+            meta={"attachments": body.attachments} if body.attachments else None,
+        )
         s.add(user_msg)
         s.flush()
         task = None
@@ -276,8 +301,18 @@ async def post_message(chat_id: int, body: MessageIn):
                 )
                 s.add(task)
                 s.flush()
+            if body.attachments:
+                task.attachments = [*(task.attachments or []), *body.attachments]
             new_edit = (task.id, content, context)
             reply = Message(chat_id=chat_id, role="task", content="", task_id=task.id)
+        elif body.mode == "design":
+            reply = Message(
+                chat_id=chat_id,
+                role="assistant",
+                content="",
+                status="streaming",
+                meta={"kind": "design"},
+            )
         elif body.mode == "research":
             reply = Message(
                 chat_id=chat_id,
@@ -305,6 +340,7 @@ async def post_message(chat_id: int, body: MessageIn):
                 request=content,
                 context=context,
                 title=content[:80],
+                attachments=body.attachments or None,
             )
             s.add(task)
             s.flush()
@@ -325,6 +361,39 @@ async def post_message(chat_id: int, body: MessageIn):
     else:
         chat_service.start_reply(result["messages"][1]["id"])
     return result
+
+
+class UploadIn(BaseModel):
+    name: str = Field(default="görsel", max_length=200)
+    data: str = Field(max_length=14_000_000)  # base64; ~10 MB of image
+
+
+@router.post("/uploads", status_code=201)
+def upload(body: UploadIn):
+    try:
+        raw = base64.b64decode(body.data, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(400, "Görsel okunamadı.") from None
+    try:
+        return attachments.save_upload(raw, body.name)
+    except attachments.AttachmentError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@router.get("/uploads/{upload_id}")
+def get_upload(upload_id: str):
+    path = attachments.upload_path(upload_id)
+    if path is None:
+        raise HTTPException(404)
+    return FileResponse(path)
+
+
+@router.get("/designs/{message_id}/{n}.png")
+def get_design(message_id: int, n: int):
+    path = designs.folder(message_id) / f"v{n}.png"
+    if not path.is_file():
+        raise HTTPException(404)
+    return FileResponse(path, media_type="image/png")
 
 
 @router.post("/messages/{message_id}/cancel")
@@ -441,7 +510,7 @@ def put_preference(key: str, body: PrefIn):
 class TemplateIn(BaseModel):
     title: str = Field(min_length=1, max_length=80)
     body: str = Field(min_length=1, max_length=20_000)
-    mode: Literal["chat", "task", "research"] = "task"
+    mode: Literal["chat", "task", "research", "design", "edit"] = "task"
 
 
 @router.get("/templates")

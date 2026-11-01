@@ -76,3 +76,8 @@ def test_data_dir_is_private():
 def test_timestamps_carry_utc_zone(client):
     chat = client.post("/api/chats", json={}).json()
     assert chat["created_at"].endswith("+00:00")
+
+
+def test_unknown_api_routes_are_404_not_the_ui_page(client):
+    r = client.get("/api/olmayan-endpoint")
+    assert r.status_code == 404 and r.headers["content-type"].startswith("application/json")

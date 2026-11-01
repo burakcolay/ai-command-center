@@ -16,7 +16,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 
-from acc import checks, config, gitops, memory, notify, security, serialize
+from acc import attachments, checks, config, gitops, memory, notify, security, serialize
 from acc.adapters import Registry
 from acc.adapters.base import AdapterError, QuotaExceeded, RunRequest
 from acc.agents import AGENTS, PLANNABLE, effort_for, step_system_prompt
@@ -253,6 +253,8 @@ class Orchestrator:
         if change_note and t.plan:
             parts.append("ÖNCEKİ PLAN:\n" + json.dumps(t.plan, ensure_ascii=False, indent=1))
             parts.append(f"KULLANICININ DEĞİŞİKLİK TALEBİ: {change_note}")
+        if block := attachments.prompt_block(t.attachments):
+            parts.append(block.strip())
         parts.append(f"KULLANICI İSTEĞİ: {t.request}")
         return "\n\n".join(parts)
 
@@ -262,6 +264,7 @@ class Orchestrator:
             project = s.get(Project, t.project_id) if t.project_id else None
             prompt = self._plan_prompt(t, project, change_note)
             cwd = Path(project.path) if project and Path(project.path).is_dir() else None
+            t_attachments = t.attachments
 
         agent = AGENTS["orchestrator"]
         req = RunRequest(
@@ -271,9 +274,10 @@ class Orchestrator:
                 agents="\n".join(f"- {a}: {AGENTS[a].description}" for a in PLANNABLE)
             ),
             json_schema=PLAN_SCHEMA,
-            tools=agent.tools if cwd else [],
+            tools=agent.tools if cwd else (["Read"] if t_attachments else []),
             permission_mode="dontAsk",
             effort=effort_for("plan"),
+            read_dirs=attachments.read_dirs() if t_attachments else [],
         )
         try:
             adapter_id, result = await self._run_adapter(task_id, agent.adapters, req, {})
@@ -399,16 +403,20 @@ class Orchestrator:
                 prompt = (
                     memory.prompt_block(project.name)
                     + checks_block(checks.effective(project.checks, cwd))
+                    + attachments.prompt_block(t.attachments)
                     + step_prompt(t, nxt, done, len(steps))
                 )
+                has_attachments = bool(t.attachments)
                 step_pk, step_id, agent = nxt.id, nxt.step_id, AGENTS.get(nxt.agent)
             if self._status(task_id) != TaskStatus.RUNNING:
                 return
             if agent is None:
                 raise ExecError(f"Bilinmeyen ajan: {nxt.agent}")
-            await self._run_step(task_id, step_pk, step_id, agent, prompt, wt, cwd)
+            await self._run_step(task_id, step_pk, step_id, agent, prompt, wt, cwd, has_attachments)
 
-    async def _run_step(self, task_id, step_pk, step_id, agent, prompt, wt, cwd) -> None:
+    async def _run_step(
+        self, task_id, step_pk, step_id, agent, prompt, wt, cwd, has_attachments=False
+    ) -> None:
         self._update_step(step_pk, task_id, status=StepStatus.RUNNING, started_at=_now())
         self._event(task_id, "log", {"text": f"▸ {agent.name} başladı", "step": step_id})
         req = RunRequest(
@@ -419,6 +427,7 @@ class Orchestrator:
             permission_mode="dontAsk",
             settings=agent.settings,
             effort=effort_for("step"),
+            read_dirs=attachments.read_dirs() if has_attachments else [],
         )
         try:
             adapter_id, result = await self._run_adapter(
