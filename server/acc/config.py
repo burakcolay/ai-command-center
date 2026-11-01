@@ -8,7 +8,7 @@ WEB_DIST = ROOT / "web" / "dist"
 
 # Only ever bind to loopback. Remote access is out of scope by design.
 HOST = "127.0.0.1"
-PORT = int(os.environ.get("ACC_PORT", "8765"))
+PORT = int(os.environ.get("ACC_PORT", "7420"))
 
 # Demo adapter: fake responses for trying the UI without any CLI login.
 DEMO_MODE = os.environ.get("ACC_DEMO") == "1"

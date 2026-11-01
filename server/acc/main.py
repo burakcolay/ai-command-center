@@ -1,3 +1,5 @@
+import socket
+import sys
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -61,8 +63,23 @@ if config.WEB_DIST.is_dir():
         return FileResponse(config.WEB_DIST / "index.html")
 
 
+def _port_free(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+        except OSError:
+            return False
+    return True
+
+
 def run() -> None:
-    uvicorn.run(app, host=config.HOST, port=config.PORT)
+    if not _port_free(config.HOST, config.PORT):
+        sys.exit(
+            f"Port {config.PORT} başka bir uygulama tarafından kullanılıyor.\n"
+            f"Farklı bir port ile başlatın, örneğin: make start PORT={config.PORT + 1}"
+        )
+    print(f"Komuta Merkezi: http://{config.HOST}:{config.PORT}")
+    uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="warning")
 
 
 if __name__ == "__main__":

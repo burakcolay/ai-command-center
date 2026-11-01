@@ -28,7 +28,9 @@ make setup
 make start
 ```
 
-Ardından tarayıcıda http://127.0.0.1:8765 adresini açın.
+Ardından tarayıcıda http://127.0.0.1:7420 adresini açın.
+
+Port 7420 doluysa başka bir port seçin (örnek: `make start PORT=7500`). Sunucu her zaman yalnızca `127.0.0.1` üzerinde dinler; dışarıdan erişilemez.
 
 - `make dev`: geliştirme modu (Vite hot-reload: http://127.0.0.1:5173)
 - `make demo`: Claude Code olmadan, sahte planlarla arayüzü deneme

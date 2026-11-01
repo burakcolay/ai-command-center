@@ -20,5 +20,5 @@ registry._health.clear()
 def client():
     from acc.main import app
 
-    with TestClient(app, base_url="http://127.0.0.1:8765") as c:
+    with TestClient(app, base_url="http://127.0.0.1:7420") as c:
         yield c

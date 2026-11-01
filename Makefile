@@ -1,5 +1,9 @@
 .PHONY: setup start dev demo test build
 
+# Change with: make start PORT=7500
+PORT ?= 7420
+export ACC_PORT := $(PORT)
+
 setup:
 	cd server && uv sync
 	cd web && npm install && npm run build
@@ -17,7 +21,7 @@ demo: build
 # Backend + Vite hot reload. Ctrl+C stops both.
 dev:
 	@trap 'kill 0' INT TERM EXIT; \
-	(cd server && uv run uvicorn acc.main:app --host 127.0.0.1 --port 8765 --reload) & \
+	(cd server && uv run uvicorn acc.main:app --host 127.0.0.1 --port $(PORT) --reload) & \
 	(cd web && npm run dev) & \
 	wait
 
