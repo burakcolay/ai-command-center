@@ -1,11 +1,14 @@
 import { RefreshCw } from "lucide-react";
 import { useState } from "react";
+import { api } from "../lib/api";
 import { ModelDot } from "../components/StatusDot";
 import { BILLING_LABEL, MODEL_STATE_LABEL, USAGE_SOURCE_LABEL, WINDOW_LABEL } from "../lib/labels";
 import type { ModelInfo } from "../lib/types";
 import { Page } from "./Page";
 
 const CAP_LABEL: Record<string, string> = {
+  chat: "Sohbet",
+  tools: "Dosya ve araçlar",
   planning: "Planlama",
   coding: "Kodlama",
   review: "İnceleme",
@@ -18,8 +21,7 @@ const CAP_LABEL: Record<string, string> = {
 
 // Shown so the roadmap is visible; these adapters are not wired yet.
 const PLANNED = [
-  { name: "OpenAI Codex", note: "ChatGPT aboneliği · codex exec", phase: "Faz 2" },
-  { name: "Ollama", note: "Yerel · localhost:11434", phase: "Faz 2" },
+  { name: "OpenAI Codex", note: "ChatGPT aboneliği gerekli · abonelik alınınca eklenecek", phase: "Sonra" },
   { name: "Grok Build", note: "Koşullu ücretsiz erişim · doğrulanacak", phase: "Faz 2" },
   { name: "Kimi Code", note: "Üyelik gerekli · opsiyonel", phase: "Sonra" },
   { name: "DeepSeek", note: "Ücretli API · varsayılan kapalı", phase: "Sonra" },
@@ -28,9 +30,11 @@ const PLANNED = [
 export function ModelsView({
   models,
   onRefresh,
+  onError,
 }: {
   models: ModelInfo[];
   onRefresh: () => Promise<void>;
+  onError: (msg: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   return (
@@ -91,6 +95,21 @@ export function ModelsView({
               </div>
             </div>
 
+            {m.data.models && m.data.models.length > 0 && (
+              <LocalModels
+                models={m.data.models}
+                selected={m.data.selected}
+                onSelect={async (name) => {
+                  try {
+                    await api.setPreference("ollama_model", name);
+                    await onRefresh();
+                  } catch (e) {
+                    onError((e as Error).message);
+                  }
+                }}
+              />
+            )}
+
             <div className="mt-4 flex flex-wrap gap-1.5">
               {Object.entries(m.capabilities)
                 .filter(([, v]) => v)
@@ -138,6 +157,43 @@ function UsageBar({ name, value, resetsAt }: { name: string; value: number | nul
           sıfırlanma: {new Date(resetsAt * 1000).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" })}
         </div>
       )}
+    </div>
+  );
+}
+
+function LocalModels({
+  models,
+  selected,
+  onSelect,
+}: {
+  models: NonNullable<ModelInfo["data"]["models"]>;
+  selected?: string;
+  onSelect: (name: string) => void;
+}) {
+  return (
+    <div className="mt-4">
+      <div className="label mb-1.5">Kurulu modeller · varsayılanı seç</div>
+      <div className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+        {models.map((lm) => (
+          <button
+            key={lm.name}
+            onClick={() => onSelect(lm.name)}
+            className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-white/[0.03]"
+            aria-pressed={lm.name === selected}
+          >
+            <span
+              className={`size-2 shrink-0 rounded-full ${lm.name === selected ? "bg-white" : "ring-1 ring-faint"}`}
+            />
+            <span className="flex-1 truncate font-mono text-[12px] text-fg">{lm.name}</span>
+            <span className="font-mono text-[10.5px] text-faint">
+              {[lm.params, lm.quant, `${lm.size_gb} GB`].filter(Boolean).join(" · ")}
+            </span>
+          </button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[11.5px] text-faint">
+        16 GB RAM için 7–8B, Q4 modeller önerilir. Model yalnızca kullanılırken RAM'e yüklenir.
+      </p>
     </div>
   );
 }

@@ -30,6 +30,7 @@ export interface Message {
   role: "user" | "assistant" | "task";
   content: string;
   status: "streaming" | "done" | "error" | "cancelled";
+  adapter_id: string | null;
   task_id: number | null;
   created_at: string;
 }
@@ -139,6 +140,10 @@ export interface ModelInfo {
   capabilities: Record<string, boolean>;
   state: string;
   detail: string;
+  data: {
+    models?: { name: string; size_gb: number; params: string | null; quant: string | null }[];
+    selected?: string;
+  };
   usage: {
     source: "verified" | "estimated" | "user" | "unknown";
     detail: string;

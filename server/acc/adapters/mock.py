@@ -32,7 +32,9 @@ class MockAdapter(ModelAdapter):
         requires_api_key=False,
         notes="Arayüzü denemek için sahte yanıtlar üretir. Gerçek iş yapmaz.",
     )
-    capabilities = Capabilities(planning=True, headless=True, structured_output=True)
+    capabilities = Capabilities(
+        chat=True, tools=True, planning=True, headless=True, structured_output=True
+    )
 
     def __init__(self, delay: float = 0.4) -> None:
         self.delay = delay

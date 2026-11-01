@@ -44,6 +44,8 @@ DataSource = Literal["verified", "estimated", "user", "unknown"]
 
 @dataclass(frozen=True)
 class Capabilities:
+    chat: bool = False
+    tools: bool = False  # can read/edit files, run commands, search the web
     planning: bool = False
     coding: bool = False
     review: bool = False

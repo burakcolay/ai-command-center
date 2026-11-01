@@ -178,6 +178,11 @@ async def remove_worktree(root: Path, path: Path, branch: str, merged: bool) -> 
     await _run(root, "branch", "-d" if merged else "-D", branch)
 
 
+async def changed_files(root: Path, base: str, head: str) -> list[str]:
+    out = await git(root, "diff", "--name-only", base, head)
+    return [line for line in out.splitlines() if line]
+
+
 async def initial_commit(root: Path) -> None:
     await git(
         root,

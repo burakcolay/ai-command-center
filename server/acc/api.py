@@ -7,10 +7,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from acc import config, gitops, serialize
+from acc import config, gitops, memory, prefs, serialize
 from acc.adapters import registry
 from acc.agents import AGENTS
-from acc.chat import ChatService, transcript
+from acc.chat import ChatService, context_for_task
 from acc.db import session
 from acc.models import Approval, ApprovalStatus, AuditLog, Chat, Message, Project, Task, TaskEvent
 from acc.orchestrator import Decision, ExecError, InvalidTransition, Orchestrator
@@ -69,6 +69,33 @@ async def create_project(body: ProjectIn):
         return serialize.project(p)
 
 
+class MemoryIn(BaseModel):
+    content: str = Field(max_length=500_000)
+
+
+def _project_name(project_id: int) -> str:
+    with session() as s:
+        p = s.get(Project, project_id)
+        if p is None:
+            raise HTTPException(404)
+        return p.name
+
+
+@router.get("/projects/{project_id}/memory")
+def get_memory(project_id: int):
+    name = _project_name(project_id)
+    return {"path": str(memory.path_for(name)), "content": memory.read(name)}
+
+
+@router.put("/projects/{project_id}/memory")
+def put_memory(project_id: int, body: MemoryIn):
+    name = _project_name(project_id)
+    path = memory.write(name, body.content)
+    with session() as s:
+        s.add(AuditLog(actor="user", action="memory.update", target=f"project:{project_id}"))
+    return {"path": str(path), "content": memory.read(name)}
+
+
 @router.delete("/projects/{project_id}", status_code=204)
 def delete_project(project_id: int):
     """Removes the project from the app only. Files on disk are never deleted."""
@@ -92,6 +119,8 @@ class MessageIn(BaseModel):
     project_id: int | None = None
     # chat: talk it through (nothing changes) · task: plan → approve → execute
     mode: Literal["chat", "task"] = "task"
+    # chat only: which model answers (None = default, Claude). e.g. "ollama"
+    model: str | None = Field(default=None, max_length=64)
 
 
 @router.get("/chats")
@@ -156,10 +185,18 @@ async def post_message(chat_id: int, body: MessageIn):
         s.flush()
         task = None
         if body.mode == "chat":
-            reply = Message(chat_id=chat_id, role="assistant", content="", status="streaming")
+            if body.model and registry.get(body.model) is None:
+                raise HTTPException(400, "Bilinmeyen model.")
+            reply = Message(
+                chat_id=chat_id,
+                role="assistant",
+                content="",
+                status="streaming",
+                adapter_id=body.model,
+            )
         else:
             # The conversation so far travels with the task to the planner and the agents.
-            context = transcript(s, chat_id, before_id=user_msg.id) or None
+            context = context_for_task(s, c, before_id=user_msg.id)
             task = Task(
                 chat_id=chat_id,
                 project_id=c.project_id,
@@ -261,6 +298,7 @@ async def list_models(fresh: bool = False):
                 "capabilities": a.capabilities.__dict__,
                 "state": h.state,
                 "detail": h.detail,
+                "data": h.data,
                 "usage": {
                     "source": u.source,
                     "detail": u.detail,
@@ -275,6 +313,21 @@ async def list_models(fresh: bool = False):
 @router.get("/agents")
 def list_agents():
     return [a.__dict__ for a in AGENTS.values()]
+
+
+class PrefIn(BaseModel):
+    value: str | int | bool | None
+
+
+@router.put("/preferences/{key}")
+def put_preference(key: str, body: PrefIn):
+    try:
+        prefs.put(key, body.value)
+    except KeyError:
+        raise HTTPException(400, "Bilinmeyen ayar.") from None
+    if key == "ollama_model":
+        registry.invalidate("ollama")
+    return {"key": key, "value": body.value}
 
 
 @router.get("/system")

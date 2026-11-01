@@ -97,9 +97,22 @@ Kullanıcı ORBIT'e iki şekilde yazar:
 - **Sağlayıcıdan bağımsız:** Konuşma her turda metin olarak yeniden gönderilir (en yeni 150 bin karakter; tek mesaj en fazla 100 bin karakter, uzun bir MVP belgesi rahatça sığar). Codex ve Ollama da aynı şekilde çalışabilir.
 - **Kurallar:** Proje yoksa asistanın yalnızca web araçları vardır. Durdurulan yanıtın yazılmış kısmı korunur. Bir yanıt yazılırken aynı sohbete ikinci mesaj gönderilemez.
 
+### Bağlam ve kota yönetimi
+
+- **Ajan adımları birbirinden bağımsızdır.** Her adım yeni bir oturumdur; adımlar arasında yalnızca kısa özetler taşınır. Bu yüzden uzun görevlerde context birikmez. Tek bir adımın içinde Claude Code kendi otomatik sıkıştırmasını kullanır.
+- **Sohbet özetleme:** Özetlenmemiş geçmiş 30 bin karakteri geçince, en yeni 6 mesaj dışındakiler kayan bir özete katlanır (`chats.summary`, `chats.summary_until`). Sonraki turlar özeti ve son mesajları gönderir. Özeti önce yerel model (Ollama) çıkarır; yoksa Claude'a düşer. Amaç taşmayı önlemekten çok her turda tüm geçmişi tekrar gönderip kota harcamamaktır.
+- **Görev bağlamı:** Göreve dönüşen sohbet, sığıyorsa tam metniyle, sığmıyorsa özet + son mesajlarla aktarılır.
+
+### Proje Hafızası
+
+- **Dosya:** Proje başına bir markdown dosyası (`MEMORY_DIR/<Proje>.md`, varsayılan `data/memory`).
+- **Kullanım:** Her sohbete, plana ve ajan adımına en fazla 12 bin karakteri eklenir. Uzunsa elle yazılmış baş kısmı ve en yeni günlük kayıtları korunur.
+- **Karar Günlüğü:** Her birleştirmede görev numarası, başlık, plan özetinin ilk cümlesi, değişen dosyalar ve commit otomatik eklenir. Ek model çağrısı yapılmaz.
+- **Obsidian:** Zorunlu değil. Dosyalar düz markdown olduğu için `MEMORY_DIR` bir Obsidian kasasının içini gösterebilir; eklenti veya API gerekmez. Operasyonel durum SQLite'ta kalır, kalıcı bilgi markdown'dadır.
+
 ## 6. Veri modeli (SQLite)
 
-`projects`, `chats`, `messages`, `tasks`, `task_steps` (yürütme adımları ve özetleri), `task_events` (yalnızca ekleme yapılan günlük ve canlı akış), `approvals`, `audit_logs`.
+`projects`, `chats` (kayan özet dahil), `messages`, `tasks`, `task_steps`, `preferences` (yürütme adımları ve özetleri), `task_events` (yalnızca ekleme yapılan günlük ve canlı akış), `approvals`, `audit_logs`.
 
 **Şema geçişi:** `db._add_missing_columns` yalnızca ekleme yapar; yeni sütunları mevcut veritabanına `ALTER TABLE ADD COLUMN` ile ekler. Eski veritabanları sürüm güncellemelerinde bozulmaz.
 
@@ -132,5 +145,10 @@ Her aktif durumdan cancel ──► cancelled
 - [x] **Orchestrator v0:** plan üretimi, onay, değişiklik talebi, red, iptal, tekrar deneme
 - [x] **Yürütme motoru:** git worktree, adım adım ajanlar, sandbox, diff ekranı, değişiklik isteme, birleştirme onayı, kaldığı yerden devam
 - [x] **Sohbet modu:** akışlı yanıtlar, proje okuma, web araştırması, sohbetten göreve bağlam aktarımı
-- [ ] **Sıradaki — Faz 2:** Codex ve Ollama adaptörleri (Claude kotasını rahatlatmak için), ardından Grok
+- [x] **Proje Hafızası + otomatik karar günlüğü** (Obsidian uyumlu düz markdown)
+- [x] **Ollama adaptörü:** sohbet ve özetleme; dosya araçları yok, ajan adımlarına asla atanmaz
+- [x] **Uzun sohbet özetleme** (önce yerel model)
+- [ ] **Codex adaptörü:** ChatGPT aboneliği alındığında; CLI davranışı o zaman gerçek hesapla doğrulanacak
+- [ ] **Sıradaki — Kalite kapıları (Faz 6):** birleştirmeden önce projenin kendi test ve lint komutlarını ORBIT'in kendisi çalıştırır; sonuç diff'in yanında gösterilir (AI'nın "testler geçti" demesine güvenilmez)
+- [ ] Grok Build adaptörü (ücretsiz erişim doğrulanırsa)
 - [ ] Faz 4–8: dokümandaki sırayla

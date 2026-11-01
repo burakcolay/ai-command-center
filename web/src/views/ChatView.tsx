@@ -30,6 +30,9 @@ interface Props {
   projects: Project[];
   projectId: number | null;
   mode: ComposerMode;
+  chatModels: { id: string | null; label: string }[];
+  chatModel: string | null;
+  onChatModelChange: (id: string | null) => void;
   demoMode: boolean;
   onModeChange: (m: ComposerMode) => void;
   onProjectChange: (id: number | null) => void;
@@ -65,6 +68,9 @@ export function ChatView(p: Props) {
       onProjectChange={p.onProjectChange}
       mode={p.mode}
       onModeChange={p.onModeChange}
+      chatModels={p.chatModels}
+      chatModel={p.chatModel}
+      onChatModelChange={p.onChatModelChange}
       onSend={p.onSend}
       prefill={prefill}
       onStop={streaming ? () => p.onStop(streaming.id) : undefined}
@@ -182,6 +188,9 @@ function AssistantMessage({
           </span>
           <span className="truncate">{activity ?? (m.content ? "yazıyor" : "düşünüyor")}</span>
         </div>
+      )}
+      {m.adapter_id === "ollama" && !streaming && (
+        <div className="mt-1.5 font-mono text-[10px] tracking-wide text-faint">yerel model</div>
       )}
       {canConvert && (
         <button

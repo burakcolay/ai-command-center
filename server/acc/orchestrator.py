@@ -15,7 +15,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 
-from acc import config, gitops, serialize
+from acc import config, gitops, memory, serialize
 from acc.adapters import Registry
 from acc.adapters.base import AdapterError, RunRequest
 from acc.agents import AGENTS, PLANNABLE, step_system_prompt
@@ -159,7 +159,7 @@ class Orchestrator:
         self, task_id: int, adapter_ids: list[str], req: RunRequest, tag: dict[str, Any]
     ) -> tuple[str, dict[str, Any]]:
         """Run the first available adapter; stream its events; return (adapter_id, result)."""
-        adapter, skipped = await self.registry.pick(adapter_ids)
+        adapter, skipped = await self.registry.pick(adapter_ids, needs_tools=bool(req.tools))
         for reason in skipped:
             self._log(task_id, f"Atlandı — {reason}")
         if adapter is None:
@@ -187,6 +187,8 @@ class Orchestrator:
         parts = []
         if project:
             parts.append(f"PROJE: {project.name}\nDİZİN: {project.path}")
+            if mem := memory.prompt_block(project.name):
+                parts.append(mem.strip())
         else:
             parts.append("PROJE: seçilmedi (genel istek)")
         if t.context:
@@ -325,7 +327,8 @@ class Orchestrator:
                 if nxt is None:
                     return
                 done = [st for st in steps if st.status == StepStatus.DONE]
-                prompt = step_prompt(t, nxt, done, len(steps))
+                project = s.get(Project, t.project_id)
+                prompt = memory.prompt_block(project.name) + step_prompt(t, nxt, done, len(steps))
                 step_pk, step_id, agent = nxt.id, nxt.step_id, AGENTS.get(nxt.agent)
             if self._status(task_id) != TaskStatus.RUNNING:
                 return
@@ -432,6 +435,24 @@ class Orchestrator:
         info = await gitops.repo_info(Path(project.path))
         return await gitops.merge(info.root, branch, into, f"Orbit: {title}")
 
+    async def _record_decision(self, task_id: int, merged_commit: str) -> None:
+        """Append the merged task to the project's decision log (project memory)."""
+        with session() as s:
+            t = s.get(Task, task_id)
+            project = s.get(Project, t.project_id)
+            name, path, base, title = project.name, project.path, t.base_commit, t.title
+            summary = ((t.plan or {}).get("summary") or "").strip()
+        try:
+            info = await gitops.repo_info(Path(path))
+            files = await gitops.changed_files(info.root, base, merged_commit)
+        except GitError:
+            files = []
+        first = summary.split(". ")[0][:240]
+        shown = ", ".join(files[:5]) + (f" +{len(files) - 5}" if len(files) > 5 else "")
+        memory.append_decision(
+            name, f"Görev #{task_id} · **{title}** — {first} · {shown} · `{merged_commit[:8]}`"
+        )
+
     # ---------- decisions ----------
 
     async def decide(self, task_id: int, decision: Decision, note: str | None) -> dict[str, Any]:
@@ -484,6 +505,7 @@ class Orchestrator:
         if decision == Decision.APPROVE:
             if stage == TaskStage.MERGE:
                 self._log(task_id, f"Değişiklikler projeye birleştirildi ({merged_commit[:8]}).")
+                await self._record_decision(task_id, merged_commit)
                 payload = self._update(
                     task_id,
                     status=TaskStatus.COMPLETED,

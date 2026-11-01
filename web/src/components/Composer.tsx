@@ -1,4 +1,4 @@
-import { ArrowUp, FolderKanban, MessageCircle, Square, Zap } from "lucide-react";
+import { ArrowUp, Cpu, FolderKanban, MessageCircle, Square, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ComposerMode, Project } from "../lib/types";
 
@@ -8,6 +8,10 @@ interface Props {
   onProjectChange: (id: number | null) => void;
   mode: ComposerMode;
   onModeChange: (m: ComposerMode) => void;
+  /** Models that can answer in chat mode; id null = default (Claude). */
+  chatModels: { id: string | null; label: string }[];
+  chatModel: string | null;
+  onChatModelChange: (id: string | null) => void;
   onSend: (text: string) => Promise<void>;
   /** Set from outside (e.g. "Göreve dönüştür"); `nonce` makes repeated prefills apply. */
   prefill?: { text: string; nonce: number };
@@ -80,6 +84,26 @@ export function Composer(p: Props) {
       <div className="flex items-center justify-between gap-2 px-3 pb-3">
         <div className="flex min-w-0 items-center gap-1">
           <ModeSwitch mode={p.mode} onChange={p.onModeChange} />
+          {p.mode === "chat" && p.chatModels.length > 1 && (
+            <label
+              className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-dim hover:text-fg"
+              title="Yanıtı hangi model versin? Yerel model proje dosyalarını okuyamaz."
+            >
+              <Cpu size={13} strokeWidth={1.6} className="shrink-0" />
+              <select
+                value={p.chatModel ?? ""}
+                onChange={(e) => p.onChatModelChange(e.target.value || null)}
+                className="min-w-0 max-w-48 cursor-pointer truncate bg-transparent font-mono text-[11px] tracking-wide focus:outline-none"
+                aria-label="Model"
+              >
+                {p.chatModels.map((m) => (
+                  <option key={m.id ?? ""} value={m.id ?? ""} className="bg-panel">
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-dim hover:text-fg">
             <FolderKanban size={13} strokeWidth={1.6} className="shrink-0" />
             <select

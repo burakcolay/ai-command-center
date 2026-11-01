@@ -1,5 +1,6 @@
-import { Folder, Plus, X } from "lucide-react";
+import { BookMarked, Folder, Plus, X } from "lucide-react";
 import { useState } from "react";
+import { MemoryEditor } from "../components/MemoryEditor";
 import { api } from "../lib/api";
 import type { Project } from "../lib/types";
 import { Empty, inputCls, Page } from "./Page";
@@ -15,6 +16,7 @@ export function ProjectsView({ projects, onChanged, onOpen, onError }: Props) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
+  const [memoryFor, setMemoryFor] = useState<Project | null>(null);
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,6 +107,13 @@ export function ProjectsView({ projects, onChanged, onOpen, onError }: Props) {
                 <div className="truncate font-mono text-[11px] text-faint">{p.path}</div>
               </button>
               <button
+                onClick={() => setMemoryFor(p)}
+                className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2 py-1 font-mono text-[10.5px] text-dim hover:border-white/30 hover:text-fg"
+                title="Proje hafızası: her ajana verilen kalıcı kararlar ve kurallar"
+              >
+                <BookMarked size={11} /> Hafıza
+              </button>
+              <button
                 onClick={() => remove(p)}
                 className="text-faint opacity-0 hover:text-fg group-hover:opacity-100 focus:opacity-100"
                 aria-label="Kaldır"
@@ -114,6 +123,9 @@ export function ProjectsView({ projects, onChanged, onOpen, onError }: Props) {
             </div>
           ))}
         </div>
+      )}
+      {memoryFor && (
+        <MemoryEditor project={memoryFor} onClose={() => setMemoryFor(null)} onError={onError} />
       )}
     </Page>
   );

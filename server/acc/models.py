@@ -58,6 +58,9 @@ class Chat(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(200), default="Yeni sohbet")
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"))
+    # Rolling summary of older messages, so long chats don't resend everything each turn.
+    summary: Mapped[str | None] = mapped_column(Text)
+    summary_until: Mapped[int | None] = mapped_column()  # last message id folded into summary
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -115,6 +118,7 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text)
     # assistant replies: streaming -> done | error | cancelled
     status: Mapped[str] = mapped_column(String(16), default="done", server_default="done")
+    adapter_id: Mapped[str | None] = mapped_column(String(64))  # who wrote an assistant reply
     task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -149,3 +153,11 @@ class AuditLog(Base):
     target: Mapped[str] = mapped_column(String(128))
     data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Preference(Base):
+    """Small user settings (e.g. which local model to use)."""
+
+    __tablename__ = "preferences"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[Any] = mapped_column(JSON)

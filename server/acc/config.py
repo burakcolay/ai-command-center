@@ -10,6 +10,13 @@ WEB_DIST = ROOT / "web" / "dist"
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("ACC_PORT", "7420"))
 
+# Project memory: one markdown file per project. Point this at a folder inside an
+# Obsidian vault to see and link the notes there (plain files, no plugin needed).
+MEMORY_DIR = Path(os.environ.get("ACC_MEMORY_DIR", DATA_DIR / "memory")).expanduser()
+
+# Local models via Ollama.
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+
 # Isolated per-task git worktrees live here, never inside the user's project.
 WORKTREES_DIR = DATA_DIR / "worktrees"
 

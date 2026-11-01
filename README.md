@@ -47,6 +47,36 @@ Kısa ve net işler için doğrudan **Görev** moduna geçip yazabilirsiniz. İy
 - kapsamın sınırı (ne yapılmayacağı),
 - "bitti" sayılma ölçütü, örneğin "testler geçsin".
 
+## Proje Hafızası
+
+Her projenin, ORBIT'in her sohbete, plana ve ajana verdiği bir hafıza dosyası vardır. Açmak için **Projeler → Hafıza**.
+- **Notlar:** Kalıcı kararları buraya yazın, örneğin "arayüz Türkçe", "SwiftUI kullan", "yeni bağımlılık ekleme".
+- **Karar Günlüğü:** Birleştirilen her görev buraya otomatik olarak eklenir.
+
+Dosyalar düz markdown'dır. Obsidian kullanıyorsanız klasörü kasanızın içine taşıyıp notları orada görebilir ve bağlayabilirsiniz:
+
+```bash
+make start MEMORY_DIR=~/Documents/Obsidian/Orbit
+```
+
+## Yerel modeller (Ollama, isteğe bağlı)
+
+Ücretsizdir ve kota harcamaz. Sohbette model seçiciden **Yerel** seçilebilir. Uzun sohbetlerin özetlenmesi de varsa yerel modelle yapılır. Yerel modeller dosya okuyamaz ve kod yazamaz; o işler Claude'da kalır.
+
+Kurun ve başlatın:
+
+```bash
+brew install ollama && brew services start ollama
+```
+
+16 GB RAM için ~4.7 GB'lık bir model indirin:
+
+```bash
+ollama pull qwen2.5:7b
+```
+
+ORBIT'te **Model Yöneticisi → Kontrol et**'e basın, Ollama "Kullanılabilir" görünmeli.
+
 ## Önemli
 
 - claude.ai ve ChatGPT hesap ayarlarında **extra usage / ek kredi** özelliklerini kapalı tutun. Sistem ücretli aşım kullanımını algılarsa çalışmayı durdurur; yine de bu ayarı kapalı tutmak en güvenli yoldur.

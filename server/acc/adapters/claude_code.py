@@ -48,6 +48,8 @@ class ClaudeCodeAdapter(ModelAdapter):
         notes="Planlama, kodlama, mimari ve inceleme için ana ajan.",
     )
     capabilities = Capabilities(
+        chat=True,
+        tools=True,
         planning=True,
         coding=True,
         review=True,

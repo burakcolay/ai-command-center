@@ -38,6 +38,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [mode, setMode] = useState<ComposerMode>("chat");
+  const [chatModel, setChatModel] = useState<string | null>(null);
   const [activity, setActivity] = useState<Record<number, string>>({});
   const chatIdRef = useRef(chatId);
   chatIdRef.current = chatId;
@@ -123,7 +124,7 @@ export default function App() {
         setChatId(id);
         setMessages([]);
       }
-      const r = await api.send(id, text, projectId, mode);
+      const r = await api.send(id, text, projectId, mode, chatModel);
       setMessages((prev) => [...prev, ...r.messages.filter((x) => !prev.some((y) => y.id === x.id))]);
       const task = r.task;
       if (task) setTasks((prev) => ({ ...prev, [task.id]: task }));
@@ -159,6 +160,11 @@ export default function App() {
   };
 
   const navItem = NAV_ITEMS.find((n) => n.id === view);
+  const ollama = models.find((m) => m.id === "ollama" && m.state === "available");
+  const chatModels = [
+    { id: null, label: "Claude" },
+    ...(ollama ? [{ id: "ollama", label: `Yerel · ${ollama.data.selected}` }] : []),
+  ];
 
   return (
     <div className="flex h-full">
@@ -195,6 +201,9 @@ export default function App() {
               projects={projects}
               projectId={projectId}
               mode={mode}
+              chatModels={chatModels}
+              chatModel={ollama ? chatModel : null}
+              onChatModelChange={setChatModel}
               activity={activity}
               demoMode={demoMode}
               onModeChange={setMode}
@@ -223,7 +232,9 @@ export default function App() {
             />
           )}
           {view === "agents" && <AgentsView agents={agents} />}
-          {view === "models" && <ModelsView models={models} onRefresh={() => loadModels(true)} />}
+          {view === "models" && (
+            <ModelsView models={models} onRefresh={() => loadModels(true)} onError={showError} />
+          )}
           {view === "settings" && <SettingsView demoMode={demoMode} />}
           {navItem?.phase && <ComingSoon item={navItem} />}
         </div>

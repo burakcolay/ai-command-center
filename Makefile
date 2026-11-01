@@ -4,6 +4,11 @@
 PORT ?= 7420
 export ACC_PORT := $(PORT)
 
+# Keep project memory inside an Obsidian vault: make start MEMORY_DIR=~/Obsidian/Orbit
+ifdef MEMORY_DIR
+export ACC_MEMORY_DIR := $(MEMORY_DIR)
+endif
+
 setup:
 	cd server && uv sync
 	cd web && npm install && npm run build

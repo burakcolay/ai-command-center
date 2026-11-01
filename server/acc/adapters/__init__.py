@@ -8,6 +8,7 @@ from acc import config
 from acc.adapters.base import Health, ModelAdapter, ModelState
 from acc.adapters.claude_code import ClaudeCodeAdapter
 from acc.adapters.mock import MockAdapter
+from acc.adapters.ollama import OllamaAdapter
 from acc.cost_guard import check_allowed
 
 HEALTH_TTL_S = 60
@@ -32,7 +33,12 @@ class Registry:
         self._health[adapter_id] = (time.monotonic(), h)
         return h
 
-    async def pick(self, preferred: list[str]) -> tuple[ModelAdapter | None, list[str]]:
+    def invalidate(self, adapter_id: str) -> None:
+        self._health.pop(adapter_id, None)
+
+    async def pick(
+        self, preferred: list[str], needs_tools: bool = False
+    ) -> tuple[ModelAdapter | None, list[str]]:
         """First adapter in preference order that is available and allowed by the cost guard.
 
         Returns the adapter (or None) plus a human-readable reason for every skipped one.
@@ -41,6 +47,9 @@ class Registry:
         for adapter_id in preferred:
             adapter = self._adapters.get(adapter_id)
             if adapter is None:
+                continue
+            if needs_tools and not adapter.capabilities.tools:
+                skipped.append(f"{adapter.info.name}: dosya/araç desteği yok")
                 continue
             try:
                 check_allowed(adapter.info)
@@ -55,7 +64,7 @@ class Registry:
 
 
 def build_registry() -> Registry:
-    adapters: list[ModelAdapter] = [ClaudeCodeAdapter()]
+    adapters: list[ModelAdapter] = [ClaudeCodeAdapter(), OllamaAdapter()]
     if config.DEMO_MODE:
         adapters.append(MockAdapter())
     return Registry(adapters)

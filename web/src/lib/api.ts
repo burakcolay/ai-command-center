@@ -42,16 +42,31 @@ export const api = {
   createProject: (name: string, path?: string) =>
     post<Project>("/projects", { name, path: path || null }),
   removeProject: (id: number) => req<void>(`/projects/${id}`, { method: "DELETE" }),
+  memory: (id: number) => req<{ path: string; content: string }>(`/projects/${id}/memory`),
+  saveMemory: (id: number, content: string) =>
+    req<{ path: string; content: string }>(`/projects/${id}/memory`, {
+      method: "PUT",
+      body: JSON.stringify({ content }),
+    }),
+  setPreference: (key: string, value: string) =>
+    req<unknown>(`/preferences/${key}`, { method: "PUT", body: JSON.stringify({ value }) }),
 
   chats: () => req<Chat[]>("/chats"),
   createChat: (project_id: number | null) => post<Chat>("/chats", { project_id }),
   chat: (id: number) => req<{ chat: Chat; messages: Message[]; tasks: Task[] }>(`/chats/${id}`),
   removeChat: (id: number) => req<void>(`/chats/${id}`, { method: "DELETE" }),
-  send: (chatId: number, content: string, project_id: number | null, mode: ComposerMode) =>
+  send: (
+    chatId: number,
+    content: string,
+    project_id: number | null,
+    mode: ComposerMode,
+    model: string | null,
+  ) =>
     post<{ chat: Chat; messages: Message[]; task: Task | null }>(`/chats/${chatId}/messages`, {
       content,
       project_id,
       mode,
+      model: mode === "chat" ? model : null,
     }),
   cancelMessage: (id: number) => post<Message>(`/messages/${id}/cancel`, {}),
 
