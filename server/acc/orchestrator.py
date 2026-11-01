@@ -37,7 +37,7 @@ from acc.models import (
 from acc.models import utcnow as _now
 
 TERMINAL = {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
-CONTEXT_FOR_STEPS = 20_000  # chars of conversation each agent step sees
+CONTEXT_FOR_STEPS = 60_000  # chars of conversation each agent step sees
 
 PLAN_SCHEMA: dict[str, Any] = {
     "type": "object",

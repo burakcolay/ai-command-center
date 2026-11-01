@@ -88,7 +88,7 @@ class ChatIn(BaseModel):
 
 
 class MessageIn(BaseModel):
-    content: str = Field(min_length=1, max_length=20000)
+    content: str = Field(min_length=1, max_length=100_000)  # long specs can be pasted
     project_id: int | None = None
     # chat: talk it through (nothing changes) · task: plan → approve → execute
     mode: Literal["chat", "task"] = "task"

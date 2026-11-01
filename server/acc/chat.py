@@ -22,7 +22,7 @@ from acc.db import session
 from acc.events import broker
 from acc.models import Chat, Message, Project, Task
 
-TRANSCRIPT_LIMIT = 60_000  # chars of history sent with each turn (newest kept)
+TRANSCRIPT_LIMIT = 150_000  # chars of history sent with each turn (newest kept)
 WEB_ONLY = ["WebSearch", "WebFetch"]
 
 

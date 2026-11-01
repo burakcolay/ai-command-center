@@ -93,8 +93,8 @@ Kullanıcı ORBIT'e iki şekilde yazar:
 | **Sohbet** (varsayılan) | Sohbet asistanı yanıt verir; yanıt parça parça akar. Proje seçiliyse kodu okuyabilir (Read/Glob/Grep), web'de araştırma yapabilir. | Hayır. Yazma araçları hiç verilmez. |
 | **Görev** | Orchestrator plan çıkarır → onay → yürütme → inceleme → birleştirme. | Yalnızca onaylı birleştirmeyle. |
 
-- **Bağlam aktarımı:** Görev modunda gönderilen her mesaj, o sohbetteki konuşmanın bir anlık görüntüsünü (`tasks.context`) yanında taşır. Orchestrator planı bu konuşmadan çıkarır; her ajan adımı da konuşmanın son 20 bin karakterini görür. "Göreve dönüştür" butonu, kutuyu Görev moduna alıp "Sohbette kararlaştırdıklarımızı uygula." yazar.
-- **Sağlayıcıdan bağımsız:** Konuşma her turda metin olarak yeniden gönderilir (en yeni 60 bin karakter). Codex ve Ollama da aynı şekilde çalışabilir.
+- **Bağlam aktarımı:** Görev modunda gönderilen her mesaj, o sohbetteki konuşmanın bir anlık görüntüsünü (`tasks.context`) yanında taşır. Orchestrator planı bu konuşmadan çıkarır; her ajan adımı da konuşmanın son 60 bin karakterini görür. "Göreve dönüştür" butonu, kutuyu Görev moduna alıp "Sohbette kararlaştırdıklarımızı uygula." yazar.
+- **Sağlayıcıdan bağımsız:** Konuşma her turda metin olarak yeniden gönderilir (en yeni 150 bin karakter; tek mesaj en fazla 100 bin karakter, uzun bir MVP belgesi rahatça sığar). Codex ve Ollama da aynı şekilde çalışabilir.
 - **Kurallar:** Proje yoksa asistanın yalnızca web araçları vardır. Durdurulan yanıtın yazılmış kısmı korunur. Bir yanıt yazılırken aynı sohbete ikinci mesaj gönderilemez.
 
 ## 6. Veri modeli (SQLite)
