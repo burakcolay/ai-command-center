@@ -29,6 +29,7 @@ def message(m: Message) -> dict[str, Any]:
         "chat_id": m.chat_id,
         "role": m.role,
         "content": m.content,
+        "status": m.status,
         "task_id": m.task_id,
         "created_at": _ts(m.created_at),
     }

@@ -42,6 +42,18 @@ class MockAdapter(ModelAdapter):
         return Health(ModelState.AVAILABLE, "Demo modu aktif.")
 
     async def run(self, req: RunRequest, run_id: str) -> AsyncIterator[AdapterEvent]:
+        if req.stream_text:  # conversation
+            reply = (
+                "Demo yanıtı: mesajını aldım. Gerçek yanıtlar için Claude Code'a giriş yap.\n\n"
+                "- Fikri birlikte netleştirebiliriz\n- Hazır olunca **Göreve dönüştür**"
+            )
+            for i in range(0, len(reply), 24):
+                if run_id in self._cancelled:
+                    raise AdapterError("Çalıştırma iptal edildi.")
+                yield AdapterEvent("delta", {"text": reply[i : i + 24]})
+                await asyncio.sleep(self.delay / 10)
+            yield AdapterEvent("result", {"text": reply})
+            return
         if req.json_schema is None:  # an execution step, not planning
             async for ev in self._step(req, run_id):
                 yield ev

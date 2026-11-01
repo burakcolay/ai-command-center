@@ -1,6 +1,7 @@
 import re
 import subprocess
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -9,12 +10,14 @@ from sqlalchemy import select
 from acc import config, gitops, serialize
 from acc.adapters import registry
 from acc.agents import AGENTS
+from acc.chat import ChatService, transcript
 from acc.db import session
 from acc.models import Approval, ApprovalStatus, AuditLog, Chat, Message, Project, Task, TaskEvent
 from acc.orchestrator import Decision, ExecError, InvalidTransition, Orchestrator
 
 router = APIRouter(prefix="/api")
 orchestrator = Orchestrator(registry)
+chat_service = ChatService(registry)
 
 
 # ---------- projects ----------
@@ -87,6 +90,8 @@ class ChatIn(BaseModel):
 class MessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=20000)
     project_id: int | None = None
+    # chat: talk it through (nothing changes) · task: plan → approve → execute
+    mode: Literal["chat", "task"] = "task"
 
 
 @router.get("/chats")
@@ -140,22 +145,51 @@ async def post_message(chat_id: int, body: MessageIn):
             if s.get(Project, body.project_id) is None:
                 raise HTTPException(400, "Proje bulunamadı.")
             c.project_id = body.project_id
+        if body.mode == "chat" and s.scalar(
+            select(Message.id).where(Message.chat_id == chat_id, Message.status == "streaming")
+        ):
+            raise HTTPException(409, "Önceki yanıt hâlâ yazılıyor.")
         if c.title == "Yeni sohbet":
             c.title = content[:60]
         user_msg = Message(chat_id=chat_id, role="user", content=content)
-        t = Task(chat_id=chat_id, project_id=c.project_id, request=content, title=content[:80])
-        s.add_all([user_msg, t])
+        s.add(user_msg)
         s.flush()
-        task_msg = Message(chat_id=chat_id, role="task", content="", task_id=t.id)
-        s.add(task_msg)
+        task = None
+        if body.mode == "chat":
+            reply = Message(chat_id=chat_id, role="assistant", content="", status="streaming")
+        else:
+            # The conversation so far travels with the task to the planner and the agents.
+            context = transcript(s, chat_id, before_id=user_msg.id) or None
+            task = Task(
+                chat_id=chat_id,
+                project_id=c.project_id,
+                request=content,
+                context=context,
+                title=content[:80],
+            )
+            s.add(task)
+            s.flush()
+            reply = Message(chat_id=chat_id, role="task", content="", task_id=task.id)
+        s.add(reply)
         s.flush()
         result = {
             "chat": serialize.chat(c),
-            "messages": [serialize.message(user_msg), serialize.message(task_msg)],
-            "task": serialize.task_full(s, t),
+            "messages": [serialize.message(user_msg), serialize.message(reply)],
+            "task": serialize.task_full(s, task) if task else None,
         }
-    orchestrator.start_planning(result["task"]["id"])
+    if task:
+        orchestrator.start_planning(result["task"]["id"])
+    else:
+        chat_service.start_reply(result["messages"][1]["id"])
     return result
+
+
+@router.post("/messages/{message_id}/cancel")
+async def cancel_message(message_id: int):
+    try:
+        return await chat_service.cancel(message_id)
+    except LookupError:
+        raise HTTPException(404) from None
 
 
 # ---------- tasks & approvals ----------

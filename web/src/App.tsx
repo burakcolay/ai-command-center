@@ -9,6 +9,7 @@ import type {
   Agent,
   Approval,
   Chat,
+  ComposerMode,
   Message,
   ModelInfo,
   Project,
@@ -16,7 +17,7 @@ import type {
   TaskEvent,
   WsMessage,
 } from "./lib/types";
-import { ChatView } from "./views/ChatView";
+import { ChatView, activityText } from "./views/ChatView";
 import { ModelsView } from "./views/ModelsView";
 import { AgentsView, ApprovalsView, ComingSoon, SettingsView } from "./views/OtherViews";
 import { ProjectsView } from "./views/ProjectsView";
@@ -36,6 +37,8 @@ export default function App() {
   const [demoMode, setDemoMode] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [mode, setMode] = useState<ComposerMode>("chat");
+  const [activity, setActivity] = useState<Record<number, string>>({});
   const chatIdRef = useRef(chatId);
   chatIdRef.current = chatId;
 
@@ -77,7 +80,23 @@ export default function App() {
   }, [loadAll]);
 
   const connected = useSocket((m: WsMessage) => {
-    if (m.type === "task") {
+    if (m.type === "message") {
+      const msg = m.message;
+      if (msg.chat_id !== chatIdRef.current) return;
+      setMessages((prev) =>
+        prev.some((x) => x.id === msg.id) ? prev.map((x) => (x.id === msg.id ? msg : x)) : [...prev, msg],
+      );
+      setActivity(({ [msg.id]: _, ...rest }) => rest);
+    } else if (m.type === "message_delta") {
+      setMessages((prev) =>
+        prev.map((x) =>
+          x.id === m.message_id && x.status === "streaming" ? { ...x, content: x.content + m.text } : x,
+        ),
+      );
+      setActivity(({ [m.message_id]: _, ...rest }) => rest);
+    } else if (m.type === "message_activity") {
+      setActivity((prev) => ({ ...prev, [m.message_id]: activityText(m.tool) }));
+    } else if (m.type === "task") {
       setTasks((prev) => ({ ...prev, [m.task.id]: m.task }));
     } else if (m.type === "event") {
       const e = m.event;
@@ -104,14 +123,19 @@ export default function App() {
         setChatId(id);
         setMessages([]);
       }
-      const r = await api.send(id, text, projectId);
-      setMessages((prev) => [...prev, ...r.messages]);
-      setTasks((prev) => ({ ...prev, [r.task.id]: r.task }));
+      const r = await api.send(id, text, projectId, mode);
+      setMessages((prev) => [...prev, ...r.messages.filter((x) => !prev.some((y) => y.id === x.id))]);
+      const task = r.task;
+      if (task) setTasks((prev) => ({ ...prev, [task.id]: task }));
       void loadChats();
     } catch (e) {
       showError((e as Error).message);
       throw e;
     }
+  };
+
+  const stop = (messageId: number) => {
+    api.cancelMessage(messageId).catch((e) => showError(e.message));
   };
 
   const newChat = () => {
@@ -170,9 +194,13 @@ export default function App() {
               events={events}
               projects={projects}
               projectId={projectId}
+              mode={mode}
+              activity={activity}
               demoMode={demoMode}
+              onModeChange={setMode}
               onProjectChange={setProjectId}
               onSend={send}
+              onStop={stop}
               onLoadEvents={loadEvents}
               onError={showError}
             />

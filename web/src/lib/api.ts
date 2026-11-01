@@ -4,6 +4,7 @@ import type {
   Chat,
   Decision,
   Message,
+  ComposerMode,
   ModelInfo,
   Project,
   Task,
@@ -46,11 +47,13 @@ export const api = {
   createChat: (project_id: number | null) => post<Chat>("/chats", { project_id }),
   chat: (id: number) => req<{ chat: Chat; messages: Message[]; tasks: Task[] }>(`/chats/${id}`),
   removeChat: (id: number) => req<void>(`/chats/${id}`, { method: "DELETE" }),
-  send: (chatId: number, content: string, project_id: number | null) =>
-    post<{ chat: Chat; messages: Message[]; task: Task }>(`/chats/${chatId}/messages`, {
+  send: (chatId: number, content: string, project_id: number | null, mode: ComposerMode) =>
+    post<{ chat: Chat; messages: Message[]; task: Task | null }>(`/chats/${chatId}/messages`, {
       content,
       project_id,
+      mode,
     }),
+  cancelMessage: (id: number) => post<Message>(`/messages/${id}/cancel`, {}),
 
   diff: (taskId: number) => req<TaskDiff>(`/tasks/${taskId}/diff`),
   events: (taskId: number) => req<TaskEvent[]>(`/tasks/${taskId}/events`),

@@ -84,7 +84,20 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 - `result.structured_output` alanı `--json-schema` ile doğrulanmış çıktıyı içerir.
 - `result.total_cost_usd` abonelikte temsili bir değerdir; harcama olarak gösterilmez.
 
-## 5. Veri modeli (SQLite)
+## 5. Sohbet ve görev modları
+
+Kullanıcı ORBIT'e iki şekilde yazar:
+
+| Mod | Ne olur | Dosya değişir mi? |
+|---|---|---|
+| **Sohbet** (varsayılan) | Sohbet asistanı yanıt verir; yanıt parça parça akar. Proje seçiliyse kodu okuyabilir (Read/Glob/Grep), web'de araştırma yapabilir. | Hayır. Yazma araçları hiç verilmez. |
+| **Görev** | Orchestrator plan çıkarır → onay → yürütme → inceleme → birleştirme. | Yalnızca onaylı birleştirmeyle. |
+
+- **Bağlam aktarımı:** Görev modunda gönderilen her mesaj, o sohbetteki konuşmanın bir anlık görüntüsünü (`tasks.context`) yanında taşır. Orchestrator planı bu konuşmadan çıkarır; her ajan adımı da konuşmanın son 20 bin karakterini görür. "Göreve dönüştür" butonu, kutuyu Görev moduna alıp "Sohbette kararlaştırdıklarımızı uygula." yazar.
+- **Sağlayıcıdan bağımsız:** Konuşma her turda metin olarak yeniden gönderilir (en yeni 60 bin karakter). Codex ve Ollama da aynı şekilde çalışabilir.
+- **Kurallar:** Proje yoksa asistanın yalnızca web araçları vardır. Durdurulan yanıtın yazılmış kısmı korunur. Bir yanıt yazılırken aynı sohbete ikinci mesaj gönderilemez.
+
+## 6. Veri modeli (SQLite)
 
 `projects`, `chats`, `messages`, `tasks`, `task_steps` (yürütme adımları ve özetleri), `task_events` (yalnızca ekleme yapılan günlük ve canlı akış), `approvals`, `audit_logs`.
 
@@ -92,7 +105,7 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 
 Dokümandaki diğer tablolar (`model_usage`, `skill_registry`, `mcp_connections` …) ilgili faz geldiğinde eklenecek.
 
-## 6. Görev yaşam döngüsü
+## 7. Görev yaşam döngüsü
 
 Görevin bir `stage` alanı (plan → execute → merge → done) ve bir `status` alanı vardır:
 
@@ -112,11 +125,12 @@ Her aktif durumdan cancel ──► cancelled
 - **Kaldığı yerden devam:** Her adım ayrı bir commit olduğu için checkpoint görevi görür. Sunucu yeniden başlarsa kuyruktaki görevler devam eder; yarıda kalanlar "Kaldığı yerden devam et" ile tamamlanmamış adımdan sürdürülür.
 - **Eşzamanlılık:** Aynı anda en fazla `MAX_PARALLEL_TASKS = 1` görev yürütülür. Bu, RAM ve abonelik kotası için bilinçli bir seçim.
 
-## 7. Yol haritası durumu
+## 8. Yol haritası durumu
 
 - [x] **Faz 1 — Temel:** iskelet, SQLite, sohbet, projeler, loglar, WebSocket
 - [x] **Adaptör arayüzü + Claude Code adaptörü + maliyet koruması**
 - [x] **Orchestrator v0:** plan üretimi, onay, değişiklik talebi, red, iptal, tekrar deneme
 - [x] **Yürütme motoru:** git worktree, adım adım ajanlar, sandbox, diff ekranı, değişiklik isteme, birleştirme onayı, kaldığı yerden devam
+- [x] **Sohbet modu:** akışlı yanıtlar, proje okuma, web araştırması, sohbetten göreve bağlam aktarımı
 - [ ] **Sıradaki — Faz 2:** Codex ve Ollama adaptörleri (Claude kotasını rahatlatmak için), ardından Grok
 - [ ] Faz 4–8: dokümandaki sırayla

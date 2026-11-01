@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from acc import config
-from acc.api import orchestrator, router
+from acc.api import chat_service, orchestrator, router
 from acc.db import init_db
 from acc.events import broker
 
@@ -17,8 +17,10 @@ from acc.events import broker
 async def lifespan(_app: FastAPI):
     init_db()
     orchestrator.recover()
+    chat_service.recover()
     yield
     await orchestrator.shutdown()
+    await chat_service.shutdown()
 
 
 app = FastAPI(title="Orbit", lifespan=lifespan)

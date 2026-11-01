@@ -27,8 +27,9 @@ export interface Chat {
 export interface Message {
   id: number;
   chat_id: number;
-  role: "user" | "assistant" | "system" | "task";
+  role: "user" | "assistant" | "task";
   content: string;
+  status: "streaming" | "done" | "error" | "cancelled";
   task_id: number | null;
   created_at: string;
 }
@@ -155,7 +156,12 @@ export interface Agent {
   writes_files: boolean;
 }
 
+export type ComposerMode = "chat" | "task";
+
 export type WsMessage =
+  | { type: "message"; message: Message }
+  | { type: "message_delta"; message_id: number; text: string }
+  | { type: "message_activity"; message_id: number; tool: { name: string; input?: unknown } }
   | { type: "task"; task: Task }
   | { type: "event"; event: TaskEvent }
   | { type: "approvals_changed" };

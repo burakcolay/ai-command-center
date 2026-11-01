@@ -72,6 +72,25 @@ body {
   color: var(--color-faint);
 }
 
+/* Assistant replies (markdown). */
+.md { font-size: 14.5px; line-height: 1.7; color: var(--color-fg); overflow-wrap: anywhere; }
+.md > * + * { margin-top: 0.75em; }
+.md h1, .md h2, .md h3 { font-weight: 600; line-height: 1.35; margin-top: 1.2em; }
+.md h1 { font-size: 1.2em; } .md h2 { font-size: 1.1em; } .md h3 { font-size: 1em; }
+.md ul, .md ol { padding-left: 1.3em; }
+.md ul { list-style: disc; } .md ol { list-style: decimal; }
+.md li + li { margin-top: 0.25em; }
+.md li::marker { color: var(--color-faint); }
+.md a { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--color-faint); }
+.md strong { font-weight: 600; }
+.md blockquote { border-left: 2px solid var(--color-line-strong); padding-left: 0.9em; color: var(--color-dim); }
+.md :not(pre) > code { font-family: var(--font-mono); font-size: 0.86em; background: rgb(255 255 255 / 0.08); padding: 0.1em 0.35em; border-radius: 4px; }
+.md pre { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 8px; padding: 0.8em 1em; overflow-x: auto; }
+.md table { border-collapse: collapse; font-size: 13.5px; display: block; overflow-x: auto; }
+.md th, .md td { border: 1px solid var(--color-line-strong); padding: 0.35em 0.7em; text-align: left; }
+.md th { font-weight: 600; }
+.md hr { border-color: var(--color-line); }
+
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.08); border-radius: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }

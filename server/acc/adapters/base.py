@@ -99,9 +99,10 @@ class RunRequest:
     permission_mode: str | None = None
     model: str | None = None
     settings: dict[str, Any] | None = None  # extra provider settings (e.g. sandbox policy)
+    stream_text: bool = False  # emit "delta" events while the answer is being written
 
 
-EventKind = Literal["text", "tool", "log", "usage", "result", "error"]
+EventKind = Literal["text", "delta", "tool", "log", "usage", "result", "error"]
 
 
 @dataclass

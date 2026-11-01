@@ -36,6 +36,17 @@ Port 7420 doluysa başka bir port seçin (örnek: `make start PORT=7500`). Sunuc
 - `make demo`: Claude Code olmadan, sahte planlarla arayüzü deneme
 - `make test`: backend testleri ve frontend typecheck
 
+## Nasıl kullanılır
+
+1. **Sohbet modunda konuşun.** Fikrinizi anlatın, soru sorun, seçenekleri tartışın. Proje seçtiyseniz asistan kodunuzu okuyarak konuşur. Bu modda hiçbir dosya değişmez.
+2. **Karar netleşince "Göreve dönüştür"e basın.** Orchestrator tüm konuşmayı okuyup bir plan çıkarır. Planı onaylar, değiştirtir ya da reddedersiniz.
+3. **Ajanlar izole bir kopyada çalışır.** Bitince diff'i inceler, **Birleştir**, **Değişiklik iste** veya **Reddet** seçersiniz.
+
+Kısa ve net işler için doğrudan **Görev** moduna geçip yazabilirsiniz. İyi bir görev tarifi şunları içerir:
+- ne istendiği,
+- kapsamın sınırı (ne yapılmayacağı),
+- "bitti" sayılma ölçütü, örneğin "testler geçsin".
+
 ## Önemli
 
 - claude.ai ve ChatGPT hesap ayarlarında **extra usage / ek kredi** özelliklerini kapalı tutun. Sistem ücretli aşım kullanımını algılarsa çalışmayı durdurur; yine de bu ayarı kapalı tutmak en güvenli yoldur.

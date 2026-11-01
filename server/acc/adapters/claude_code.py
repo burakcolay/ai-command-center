@@ -127,6 +127,8 @@ class ClaudeCodeAdapter(ModelAdapter):
             args += ["--append-system-prompt", req.system_prompt]
         if req.model:
             args += ["--model", req.model]
+        if req.stream_text:
+            args += ["--include-partial-messages"]
         return args
 
     async def run(self, req: RunRequest, run_id: str) -> AsyncIterator[AdapterEvent]:
@@ -199,6 +201,12 @@ class ClaudeCodeAdapter(ModelAdapter):
                 observed_at=int(time.time()),
             )
             return [AdapterEvent("usage", {"windows": [w.__dict__ for w in windows]})]
+        if t == "stream_event":
+            ev = msg.get("event") or {}
+            delta = ev.get("delta") or {}
+            if ev.get("type") == "content_block_delta" and delta.get("type") == "text_delta":
+                return [AdapterEvent("delta", {"text": delta.get("text", "")})]
+            return []
         if t == "assistant":
             out = []
             for block in (msg.get("message") or {}).get("content") or []:

@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 from acc import config, gitops, serialize
 from acc.adapters import Registry
 from acc.adapters.base import AdapterError, RunRequest
-from acc.agents import AGENTS, step_system_prompt
+from acc.agents import AGENTS, PLANNABLE, step_system_prompt
 from acc.db import session
 from acc.events import broker
 from acc.gitops import GitError
@@ -37,6 +37,7 @@ from acc.models import (
 from acc.models import utcnow as _now
 
 TERMINAL = {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
+CONTEXT_FOR_STEPS = 20_000  # chars of conversation each agent step sees
 
 PLAN_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -52,7 +53,7 @@ PLAN_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "id": {"type": "string"},
                     "title": {"type": "string"},
-                    "agent": {"type": "string", "enum": [a for a in AGENTS if a != "orchestrator"]},
+                    "agent": {"type": "string", "enum": PLANNABLE},
                     "description": {"type": "string"},
                     "depends_on": {"type": "array", "items": {"type": "string"}},
                     "writes_files": {"type": "boolean"},
@@ -188,6 +189,8 @@ class Orchestrator:
             parts.append(f"PROJE: {project.name}\nDİZİN: {project.path}")
         else:
             parts.append("PROJE: seçilmedi (genel istek)")
+        if t.context:
+            parts.append("SOHBET GEÇMİŞİ (kararlar ve ayrıntılar burada):\n" + t.context)
         if change_note and t.plan:
             parts.append("ÖNCEKİ PLAN:\n" + json.dumps(t.plan, ensure_ascii=False, indent=1))
             parts.append(f"KULLANICININ DEĞİŞİKLİK TALEBİ: {change_note}")
@@ -206,9 +209,7 @@ class Orchestrator:
             prompt=prompt,
             cwd=cwd,
             system_prompt=PLANNER_SYSTEM.format(
-                agents="\n".join(
-                    f"- {a.id}: {a.description}" for a in AGENTS.values() if a.id != "orchestrator"
-                )
+                agents="\n".join(f"- {a}: {AGENTS[a].description}" for a in PLANNABLE)
             ),
             json_schema=PLAN_SCHEMA,
             tools=agent.tools if cwd else [],
@@ -601,6 +602,8 @@ def order_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def step_prompt(t: Task, step: TaskStep, done: list[TaskStep], total: int) -> str:
     plan = t.plan or {}
     parts = [f"GÖREV: {t.request}", f"PLAN ÖZETİ: {plan.get('summary', '')}"]
+    if t.context:
+        parts.append("SOHBET GEÇMİŞİ (kararların ayrıntısı):\n" + t.context[-CONTEXT_FOR_STEPS:])
     if done:
         parts.append(
             "TAMAMLANAN ADIMLAR:\n"
@@ -630,7 +633,7 @@ def validate_plan(plan: Any) -> str | None:
     for s in steps:
         if not isinstance(s, dict):
             return "adım nesne değil"
-        if s.get("agent") not in AGENTS or s.get("agent") == "orchestrator":
+        if s.get("agent") not in PLANNABLE:
             return f"bilinmeyen ajan: {s.get('agent')}"
         missing = [d for d in s.get("depends_on", []) if d not in ids]
         if missing:
