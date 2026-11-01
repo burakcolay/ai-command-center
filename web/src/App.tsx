@@ -244,6 +244,10 @@ export default function App() {
                 setSystem((s) => s && { ...s, notifications: on });
                 api.setPreference("notifications", on).catch((e) => showError(e.message));
               }}
+              onPreference={(key, value) => {
+                setSystem((s) => s && { ...s, [key]: value });
+                api.setPreference(key, value).catch((e) => showError(e.message));
+              }}
             />
           )}
           {navItem?.phase && <ComingSoon item={navItem} />}

@@ -42,6 +42,7 @@ def message(m: Message) -> dict[str, Any]:
         "content": m.content,
         "status": m.status,
         "adapter_id": m.adapter_id,
+        "meta": m.meta,
         "task_id": m.task_id,
         "created_at": _ts(m.created_at),
     }

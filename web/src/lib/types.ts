@@ -39,7 +39,7 @@ export interface Template {
   id: string;
   title: string;
   body: string;
-  mode: "chat" | "task";
+  mode: ComposerMode;
   description: string;
   custom: boolean;
 }
@@ -51,6 +51,8 @@ export interface SystemInfo {
   notifications_supported: boolean;
   sandbox_for_checks: boolean;
   memory_dir: string;
+  quality: "economy" | "balanced" | "best";
+  claude_model: "default" | "sonnet" | "opus" | "fable";
 }
 
 export interface Project {
@@ -75,6 +77,7 @@ export interface Message {
   content: string;
   status: "streaming" | "done" | "error" | "cancelled";
   adapter_id: string | null;
+  meta: { kind?: "research"; report_path?: string } | null;
   task_id: number | null;
   created_at: string;
 }
@@ -207,7 +210,7 @@ export interface Agent {
   writes_files: boolean;
 }
 
-export type ComposerMode = "chat" | "task";
+export type ComposerMode = "chat" | "research" | "task";
 
 export type WsMessage =
   | { type: "message"; message: Message }

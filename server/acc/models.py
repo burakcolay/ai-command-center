@@ -125,6 +125,8 @@ class Message(Base):
     # assistant replies: streaming -> done | error | cancelled
     status: Mapped[str] = mapped_column(String(16), default="done", server_default="done")
     adapter_id: Mapped[str | None] = mapped_column(String(64))  # who wrote an assistant reply
+    # e.g. {"kind": "research", "report_path": "..."}
+    meta: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

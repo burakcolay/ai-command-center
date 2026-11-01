@@ -1,4 +1,4 @@
-import { Zap } from "lucide-react";
+import { Telescope, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -9,6 +9,10 @@ import { toolTarget } from "../lib/format";
 import type { ComposerMode, Message, Project, Task, TaskEvent } from "../lib/types";
 
 const SUGGESTIONS: Record<ComposerMode, string[]> = {
+  research: [
+    "Global bir iOS uygulaması için talebi yüksek, rekabeti düşük nişleri araştır",
+    "Habit tracker uygulamalarının en büyük kullanıcı şikayetleri neler?",
+  ],
   chat: [
     "Aklımda bir uygulama fikri var, birlikte netleştirelim",
     "Bu projenin mimarisini bana anlat",
@@ -102,9 +106,14 @@ export function ChatView(p: Props) {
             ))}
           </div>
           <p className="mt-6 text-center text-[12px] leading-relaxed text-faint">
-            {p.mode === "chat"
-              ? "Sohbet modunda hiçbir dosya değişmez. Karar verdiğinde sohbeti göreve dönüştür."
-              : "Görev modunda Orchestrator bir plan çıkarır; onayından sonra ajanlar uygular."}
+            {
+              {
+                chat: "Sohbet modunda hiçbir dosya değişmez. Karar verdiğinde sohbeti göreve dönüştür.",
+                research:
+                  "Araştırma modu onlarca kaynak tarar, kaynakçalı bir rapor yazar ve kaydeder. Birkaç dakika sürebilir.",
+                task: "Görev modunda Orchestrator bir plan çıkarır; onayından sonra ajanlar uygular.",
+              }[p.mode]
+            }
             {p.demoMode && " · DEMO MODU açık"}
           </p>
         </div>
@@ -169,8 +178,15 @@ function AssistantMessage({
   onConvert: () => void;
 }) {
   const streaming = m.status === "streaming";
+  const research = m.meta?.kind === "research";
+  const report = m.meta?.report_path;
   return (
     <div className="animate-rise">
+      {research && (
+        <div className="mb-2 flex items-center gap-2 font-mono text-[10.5px] tracking-[0.14em] text-faint">
+          <Telescope size={11} /> ARAŞTIRMA RAPORU
+        </div>
+      )}
       {m.content ? (
         <div className={m.status === "error" ? "md text-danger" : "md"}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
@@ -187,7 +203,14 @@ function AssistantMessage({
               />
             ))}
           </span>
-          <span className="truncate">{activity ?? (m.content ? "yazıyor" : "düşünüyor")}</span>
+          <span className="truncate">
+            {activity ?? (m.content ? "yazıyor" : research ? "kaynaklar taranıyor" : "düşünüyor")}
+          </span>
+        </div>
+      )}
+      {report && !streaming && (
+        <div className="mt-2 truncate font-mono text-[10.5px] text-faint" title={report}>
+          kaydedildi · {report.split("/").slice(-2).join("/")}
         </div>
       )}
       {m.adapter_id === "ollama" && !streaming && (

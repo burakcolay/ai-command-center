@@ -16,7 +16,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from acc import security
+from acc import prefs, security
 from acc.adapters.base import (
     AdapterError,
     AdapterEvent,
@@ -148,8 +148,11 @@ class ClaudeCodeAdapter(ModelAdapter):
             args += ["--json-schema", json.dumps(req.json_schema)]
         if req.system_prompt:
             args += ["--append-system-prompt", req.system_prompt]
-        if req.model:
-            args += ["--model", req.model]
+        model = req.model or prefs.get("claude_model", "default")
+        if model and model != "default":
+            args += ["--model", model]
+        if req.effort:
+            args += ["--effort", req.effort]
         if req.stream_text:
             args += ["--include-partial-messages"]
         return args

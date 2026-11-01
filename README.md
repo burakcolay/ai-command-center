@@ -38,6 +38,11 @@ Port 7420 doluysa başka bir port seçin (örnek: `make start PORT=7500`). Sunuc
 
 ## Nasıl kullanılır
 
+Yazma kutusunda üç mod vardır: **Sohbet**, **Araştırma** ve **Görev**.
+
+- **Araştırma:** Bir pazar, rakip ya da teknoloji sorusu için onlarca kaynağı tarar ve rakamları karşılaştırır. Kaynakçalı bir rapor yazar: rakip tablosu, fırsatlar, net öneri ve MVP. Rapor `Araştırmalar/` klasörüne markdown olarak kaydedilir. Birkaç dakika sürer.
+- **Model ve düşünme:** **Ayarlar**'dan kalite (Ekonomik / Dengeli / En iyi) ve model (Varsayılan / Sonnet / Opus / Fable) seçilir. Daha yüksek kalite daha derin düşünür ama kotayı daha hızlı harcar.
+
 1. **Sohbet modunda konuşun.** Fikrinizi anlatın, soru sorun, seçenekleri tartışın. Proje seçtiyseniz asistan kodunuzu okuyarak konuşur. Bu modda hiçbir dosya değişmez.
 2. **Karar netleşince "Göreve dönüştür"e basın.** Orchestrator tüm konuşmayı okuyup bir plan çıkarır. Planı onaylar, değiştirtir ya da reddedersiniz.
 3. **Ajanlar izole bir kopyada çalışır.** Bitince diff'i inceler, **Birleştir**, **Değişiklik iste** veya **Reddet** seçersiniz.

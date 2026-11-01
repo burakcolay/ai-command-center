@@ -180,7 +180,7 @@ class MessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=100_000)  # long specs can be pasted
     project_id: int | None = None
     # chat: talk it through (nothing changes) · task: plan → approve → execute
-    mode: Literal["chat", "task"] = "task"
+    mode: Literal["chat", "task", "research"] = "task"
     # chat only: which model answers (None = default, Claude). e.g. "ollama"
     model: str | None = Field(default=None, max_length=64)
 
@@ -236,7 +236,7 @@ async def post_message(chat_id: int, body: MessageIn):
             if s.get(Project, body.project_id) is None:
                 raise HTTPException(400, "Proje bulunamadı.")
             c.project_id = body.project_id
-        if body.mode == "chat" and s.scalar(
+        if body.mode in ("chat", "research") and s.scalar(
             select(Message.id).where(Message.chat_id == chat_id, Message.status == "streaming")
         ):
             raise HTTPException(409, "Önceki yanıt hâlâ yazılıyor.")
@@ -246,7 +246,15 @@ async def post_message(chat_id: int, body: MessageIn):
         s.add(user_msg)
         s.flush()
         task = None
-        if body.mode == "chat":
+        if body.mode == "research":
+            reply = Message(
+                chat_id=chat_id,
+                role="assistant",
+                content="",
+                status="streaming",
+                meta={"kind": "research"},
+            )
+        elif body.mode == "chat":
             if body.model and registry.get(body.model) is None:
                 raise HTTPException(400, "Bilinmeyen model.")
             reply = Message(
@@ -387,6 +395,8 @@ def put_preference(key: str, body: PrefIn):
         prefs.put(key, body.value)
     except KeyError:
         raise HTTPException(400, "Bilinmeyen ayar.") from None
+    except ValueError:
+        raise HTTPException(400, "Geçersiz değer.") from None
     if key == "ollama_model":
         registry.invalidate("ollama")
     return {"key": key, "value": body.value}
@@ -395,7 +405,7 @@ def put_preference(key: str, body: PrefIn):
 class TemplateIn(BaseModel):
     title: str = Field(min_length=1, max_length=80)
     body: str = Field(min_length=1, max_length=20_000)
-    mode: Literal["chat", "task"] = "task"
+    mode: Literal["chat", "task", "research"] = "task"
 
 
 @router.get("/templates")
@@ -449,4 +459,6 @@ def system_info():
         "notifications_supported": notify.supported(),
         "sandbox_for_checks": checks.sandbox_available(),
         "memory_dir": str(config.MEMORY_DIR),
+        "quality": prefs.get("quality", "balanced"),
+        "claude_model": prefs.get("claude_model", "default"),
     }

@@ -19,7 +19,7 @@ from sqlalchemy import func, select
 from acc import checks, config, gitops, memory, notify, security, serialize
 from acc.adapters import Registry
 from acc.adapters.base import AdapterError, QuotaExceeded, RunRequest
-from acc.agents import AGENTS, PLANNABLE, step_system_prompt
+from acc.agents import AGENTS, PLANNABLE, effort_for, step_system_prompt
 from acc.db import session
 from acc.events import broker
 from acc.gitops import GitError
@@ -270,6 +270,7 @@ class Orchestrator:
             json_schema=PLAN_SCHEMA,
             tools=agent.tools if cwd else [],
             permission_mode="dontAsk",
+            effort=effort_for("plan"),
         )
         try:
             adapter_id, result = await self._run_adapter(task_id, agent.adapters, req, {})
@@ -407,6 +408,7 @@ class Orchestrator:
             tools=agent.tools,
             permission_mode="dontAsk",
             settings=agent.settings,
+            effort=effort_for("step"),
         )
         try:
             adapter_id, result = await self._run_adapter(

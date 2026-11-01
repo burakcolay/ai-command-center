@@ -71,13 +71,28 @@ export function ApprovalsView({
   );
 }
 
+const QUALITY = [
+  { id: "economy", label: "Ekonomik", note: "Daha az düşünür, kota daha uzun dayanır." },
+  { id: "balanced", label: "Dengeli", note: "Sohbet ve planlama derin düşünür. Önerilen." },
+  { id: "best", label: "En iyi", note: "En derin düşünme; kota en hızlı biter." },
+] as const;
+
+const MODELS = [
+  { id: "default", label: "Varsayılan", note: "Aboneliğinin seçtiği model" },
+  { id: "sonnet", label: "Sonnet", note: "Hızlı, kotayı idareli kullanır" },
+  { id: "opus", label: "Opus", note: "Daha güçlü; kotayı daha hızlı kullanır" },
+  { id: "fable", label: "Fable", note: "En yeni model; aboneliğinde yoksa hata verir" },
+] as const;
+
 export function SettingsView({
   system,
   onToggleNotifications,
+  onPreference,
   onError,
 }: {
   system: SystemInfo | null;
   onToggleNotifications: (on: boolean) => void;
+  onPreference: (key: "quality" | "claude_model", value: string) => void;
   onError: (msg: string) => void;
 }) {
   const [tested, setTested] = useState<string | null>(null);
@@ -91,6 +106,26 @@ export function SettingsView({
   };
   return (
     <Page title="Ayarlar">
+      <div className="label mb-2">Claude · model ve düşünme</div>
+      <div className="mb-8 space-y-4 rounded-xl border border-line bg-panel px-4 py-4">
+        <Choice
+          title="Kalite"
+          options={QUALITY}
+          value={system?.quality}
+          onChange={(v) => onPreference("quality", v)}
+        />
+        <Choice
+          title="Model"
+          options={MODELS}
+          value={system?.claude_model}
+          onChange={(v) => onPreference("claude_model", v)}
+        />
+        <p className="text-[12px] leading-relaxed text-faint">
+          Araştırma modu her zaman bir kademe daha derin düşünür. Model aboneliğinde yoksa
+          çalıştırma açık bir hata verir; ücretli kullanıma geçilmez.
+        </p>
+      </div>
+
       <div className="label mb-2">Bildirimler</div>
       <div className="mb-8 overflow-hidden rounded-xl border border-line bg-panel px-4 py-3">
         {system?.notifications_supported ? (
@@ -141,6 +176,39 @@ export function SettingsView({
         ))}
       </div>
     </Page>
+  );
+}
+
+function Choice<T extends string>({
+  title,
+  options,
+  value,
+  onChange,
+}: {
+  title: string;
+  options: readonly { id: T; label: string; note: string }[];
+  value?: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-1.5 text-[13px] text-fg">{title}</div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {options.map((o) => (
+          <button
+            key={o.id}
+            onClick={() => onChange(o.id)}
+            aria-pressed={value === o.id}
+            className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+              value === o.id ? "border-white bg-white/[0.06]" : "border-line hover:border-white/30"
+            }`}
+          >
+            <div className="text-[13px] text-fg">{o.label}</div>
+            <div className="mt-0.5 text-[11.5px] leading-snug text-dim">{o.note}</div>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -4,6 +4,29 @@ the user fills in."""
 
 BUILTIN = [
     {
+        "id": "b-market",
+        "title": "Pazar araştırması",
+        "mode": "research",
+        "description": "Trendler, rakipler, boşluklar ve net öneri",
+        "body": (
+            "[Kategori veya fikir; boş bırakılırsa genel] için global bir iOS uygulaması "
+            "fırsatı araştır: büyüyen kategoriler, öne çıkan rakipler ve kullanıcıların en çok "
+            "şikayet ettiği yanları, düşük rekabetli ama talebi olan nişler. Sonunda tek bir "
+            "net öneri ve MVP kapsamı ver."
+        ),
+    },
+    {
+        "id": "b-competitors",
+        "title": "Rakip analizi",
+        "mode": "research",
+        "description": "Belirli bir alandaki rakipler ve şikayetler",
+        "body": (
+            "[uygulama alanı] alanındaki en güçlü 5-8 rakibi incele: özellikler, fiyatlandırma, "
+            "puanlar ve App Store yorumlarındaki tekrar eden şikayetler. Bizim için farklılaşma "
+            "fırsatlarını öner."
+        ),
+    },
+    {
         "id": "b-test",
         "title": "Test ekle",
         "mode": "task",

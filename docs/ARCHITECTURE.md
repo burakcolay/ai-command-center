@@ -104,7 +104,29 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 - **Bildirimler** (`notify.py`): macOS'ta `osascript`. Başlık ve gövde AppleScript koduna gömülmez, argüman olarak verilir; böylece bir görev başlığı komut enjekte edemez.
 - **Şablonlar** (`templates.py` + `templates` tablosu): Hazır istekler kodda, kullanıcı şablonları veritabanında.
 
-## 6. Sohbet ve görev modları
+## 6. Sohbet, araştırma ve görev modları
+
+**Düşünme seviyesi ve model:**
+- Her Claude çalıştırmasına `--effort` verilir; seviye işin türüne ve kullanıcının kalite tercihine göre seçilir (`agents.EFFORT`).
+  - Dengeli: sohbet, planlama ve adımlar `high`; araştırma `xhigh`.
+  - Ekonomik: hepsi `medium`; araştırma `high`.
+  - En iyi: hepsi `xhigh`; araştırma `max`.
+- Model tercihi `--model` ile geçer; "Varsayılan" seçiliyse aboneliğin seçtiği model kullanılır.
+
+**Sohbet asistanının talimatı:**
+- Kısa ya da belirsiz cevapları bağlamdan yorumlar ve ilerler.
+- Seçenek sıralamak yerine gerekçeli öneri yapar.
+- Rakamları kaynakla verir, doğrulayamadığını "tahmini" diye işaretler.
+- Gerçek kullanıcı konuşmasıyla karşılaştırıldı: eski talimat her adımda soru soruyor, kaynaksız rakam veriyordu.
+
+**Araştırma modu (`RESEARCH_SYSTEM`):**
+- Soruyu alt sorulara böler, en az 12 arama yapar, önemli sayfaları açıp okur ve rakamları karşılaştırır.
+- Rapor yapısı: Kısa cevap / Bulgular / Rakipler tablosu / Fırsatlar / Öneri + MVP / Riskler / Kaynaklar.
+- Rapor `MEMORY_DIR/Araştırmalar/` altına kaydedilir.
+- Ölçülen gerçek bir çalıştırma: ~8 dakika, 5 saatlik kotanın ~%5'i, 43 kaynak linki.
+
+### Sohbet ve görev
+
 
 Kullanıcı ORBIT'e iki şekilde yazar:
 

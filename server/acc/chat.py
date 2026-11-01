@@ -9,7 +9,9 @@ model) so every turn doesn't resend — and pay quota for — the whole history.
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +21,7 @@ from sqlalchemy.orm import Session
 from acc import config, memory, serialize
 from acc.adapters import Registry
 from acc.adapters.base import AdapterError, RunRequest
-from acc.agents import AGENTS, CHAT_SYSTEM
+from acc.agents import AGENTS, CHAT_SYSTEM, RESEARCH_SYSTEM, effort_for
 from acc.db import session
 from acc.events import broker
 from acc.models import Chat, Message, Project, Task
@@ -88,6 +90,26 @@ def context_for_task(s: Session, chat: Chat, before_id: int) -> str | None:
     return conversation(s, chat, before_id)
 
 
+def save_report(text: str, question: str, project_name: str | None) -> Path:
+    """Research reports are kept as plain markdown next to project memory (Obsidian-friendly)."""
+    folder = config.MEMORY_DIR / "Araştırmalar"
+    folder.mkdir(parents=True, exist_ok=True)
+    first = next((ln for ln in text.splitlines() if ln.startswith("# ")), "")
+    title = first[2:].strip() or question.strip().splitlines()[0][:80]
+    slug = re.sub(r"[^\w\-]+", "-", title.lower(), flags=re.UNICODE).strip("-")[:60] or "rapor"
+    path = folder / f"{date.today().isoformat()}-{slug}.md"
+    n = 2
+    while path.exists():
+        path = folder / f"{date.today().isoformat()}-{slug}-{n}.md"
+        n += 1
+    header = f"> Orbit araştırması · {date.today().isoformat()}"
+    if project_name:
+        header += f" · Proje: {project_name}"
+    header += f"\n> Soru: {question.strip()[:500]}\n\n"
+    path.write_text(header + text.strip() + "\n", encoding="utf-8")
+    return path
+
+
 class ChatService:
     def __init__(self, registry: Registry) -> None:
         self.registry = registry
@@ -100,13 +122,22 @@ class ChatService:
         self._jobs.add(job)
         job.add_done_callback(self._jobs.discard)
 
-    def _finish(self, message_id: int, content: str, status: str, adapter_id: str | None = None):
+    def _finish(
+        self,
+        message_id: int,
+        content: str,
+        status: str,
+        adapter_id: str | None = None,
+        meta: dict[str, Any] | None = None,
+    ):
         with session() as s:
             m = s.get(Message, message_id)
             m.content = content
             m.status = status
             if adapter_id:
                 m.adapter_id = adapter_id
+            if meta is not None:
+                m.meta = {**(m.meta or {}), **meta}
             payload = serialize.message(m)
         broker.publish({"type": "message", "message": payload})
 
@@ -154,6 +185,7 @@ class ChatService:
         with session() as s:
             m = s.get(Message, message_id)
             chat_id, requested = m.chat_id, m.adapter_id
+            research = (m.meta or {}).get("kind") == "research"
             user = s.scalars(
                 select(Message)
                 .where(Message.chat_id == chat_id, Message.id < message_id, Message.role == "user")
@@ -171,8 +203,9 @@ class ChatService:
             project_name = project.name if project else None
             project_path = project.path if project else None
 
-        agent = AGENTS["assistant"]
-        adapter, skipped = await self.registry.pick([requested] if requested else agent.adapters)
+        agent = AGENTS["research" if research else "assistant"]
+        preferred = [requested] if requested else agent.adapters
+        adapter, skipped = await self.registry.pick(preferred, needs_tools=research)
         if adapter is None:
             reason = "; ".join(skipped) or "kayıtlı model yok"
             self._finish(message_id, f"Yanıt verecek model yok ({reason}).", "error")
@@ -198,10 +231,11 @@ class ChatService:
         req = RunRequest(
             prompt=prompt,
             cwd=cwd,
-            system_prompt=CHAT_SYSTEM,
+            system_prompt=RESEARCH_SYSTEM if research else CHAT_SYSTEM,
             tools=tools,
             permission_mode="dontAsk",
             stream_text=True,
+            effort=effort_for("research" if research else "chat"),
         )
         run_id = uuid.uuid4().hex
         self._runs[message_id] = (adapter.info.id, run_id)
@@ -219,7 +253,11 @@ class ChatService:
                     )
                 elif ev.kind == "result":
                     text = ev.data.get("text") or "".join(buf)
-                    self._finish(message_id, text, "done", adapter.info.id)
+                    meta = None
+                    if research:
+                        path = save_report(text, question, project_name)
+                        meta = {"report_path": str(path)}
+                    self._finish(message_id, text, "done", adapter.info.id, meta)
                     return
                 elif ev.kind == "error":
                     raise AdapterError(ev.data.get("text") or "Bilinmeyen hata")

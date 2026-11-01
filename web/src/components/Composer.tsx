@@ -1,4 +1,13 @@
-import { ArrowUp, Cpu, FolderKanban, LayoutTemplate, MessageCircle, Square, Zap } from "lucide-react";
+import {
+  ArrowUp,
+  Cpu,
+  FolderKanban,
+  LayoutTemplate,
+  MessageCircle,
+  Square,
+  Telescope,
+  Zap,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ComposerMode, Project, Template } from "../lib/types";
 import { TemplatePicker } from "./TemplatePicker";
@@ -32,6 +41,7 @@ function selectPlaceholder(el: HTMLTextAreaElement) {
 
 const PLACEHOLDER: Record<ComposerMode, string> = {
   chat: "Bir şey sor ya da fikrini anlat…",
+  research: "Ne araştırılsın? ör. iOS'ta talebi olup rekabeti düşük nişler",
   task: "Yapılacak işi tanımla — plan çıkarılıp onayına sunulur…",
 };
 
@@ -245,6 +255,12 @@ function ModeSwitch({ mode, onChange }: { mode: ComposerMode; onChange: (m: Comp
   return (
     <div className="flex shrink-0 items-center rounded-full border border-line p-0.5" role="group" aria-label="Mod">
       {item("chat", "Sohbet", MessageCircle, "Konuş, fikirleri netleştir. Hiçbir dosya değişmez.")}
+      {item(
+        "research",
+        "Araştırma",
+        Telescope,
+        "Onlarca kaynak tarar, kaynakçalı rapor yazar ve kaydeder. Birkaç dakika sürebilir.",
+      )}
       {item("task", "Görev", Zap, "Plan çıkar, onayla, ajanlar uygulasın.")}
     </div>
   );
