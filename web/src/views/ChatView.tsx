@@ -47,7 +47,8 @@ export function ChatView(p: Props) {
         <div className="dot-grid pointer-events-none absolute inset-0" aria-hidden />
         <div className="relative w-full max-w-2xl">
           <div className="mb-8 flex flex-col items-center gap-5 text-center">
-            <DotMatrix text="KOMUTA" dot={5} gap={3} className="max-w-full" />
+            <DotMatrix text="ORBIT" dot={6} gap={3} className="max-w-full" />
+            <div className="label tracking-[0.3em]">AI Komuta Merkezi</div>
             <p className="text-[15px] text-dim">Bugün ne inşa ediyoruz?</p>
           </div>
           {composer}

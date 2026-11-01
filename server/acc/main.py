@@ -20,7 +20,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="AI Command Center", lifespan=lifespan)
+app = FastAPI(title="Orbit", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -78,7 +78,7 @@ def run() -> None:
             f"Port {config.PORT} başka bir uygulama tarafından kullanılıyor.\n"
             f"Farklı bir port ile başlatın, örneğin: make start PORT={config.PORT + 1}"
         )
-    print(f"Komuta Merkezi: http://{config.HOST}:{config.PORT}")
+    print(f"Orbit: http://{config.HOST}:{config.PORT}")
     uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="warning")
 
 

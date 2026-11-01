@@ -1,6 +1,6 @@
 import { Menu } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DotMark } from "./components/DotMatrix";
+import { OrbitMark } from "./components/DotMatrix";
 import { Sidebar } from "./components/Sidebar";
 import { useSocket } from "./hooks/useSocket";
 import { api } from "./lib/api";
@@ -158,8 +158,8 @@ export default function App() {
           <button onClick={() => setMenuOpen(true)} aria-label="Menü" className="text-dim">
             <Menu size={18} />
           </button>
-          <DotMark size={14} />
-          <span className="font-mono text-[11px] tracking-[0.2em]">KOMUTA MERKEZİ</span>
+          <OrbitMark size={16} />
+          <span className="font-mono text-[12px] tracking-[0.32em]">ORBIT</span>
         </div>
 
         <div className="min-h-0 flex-1">

@@ -1,6 +1,6 @@
-# Komuta Merkezi — AI Command Center
+# Orbit — AI Komuta Merkezi
 
-Kişisel, local-first AI ajan orkestrasyon ortamı. Doğal dille görev verirsiniz; Orchestrator bir plan çıkarır, siz onaylarsınız, ajanlar kontrollü şekilde çalışır.
+Kişisel, local-first AI ajan orkestrasyon ortamı. Adı çalışma şeklinden geliyor: uzman ajanlar merkezdeki Orchestrator'ın yörüngesinde çalışır. Doğal dille görev verirsiniz; Orchestrator bir plan çıkarır, siz onaylarsınız, ajanlar kontrollü şekilde çalışır.
 
 **Maliyet ilkesi:** Mevcut Claude ve ChatGPT abonelikleri dışında hiçbir ücret oluşmaz. Ücretli API kullanımı kod seviyesinde kapalıdır. Ayrıntılar için [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) belgesine bakın.
 

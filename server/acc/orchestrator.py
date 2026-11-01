@@ -53,7 +53,7 @@ PLAN_SCHEMA: dict[str, Any] = {
     "required": ["title", "summary", "steps", "risks"],
 }
 
-PLANNER_SYSTEM = """Sen AI Command Center'ın Orchestrator ajanısın.
+PLANNER_SYSTEM = """Sen Orbit'in (AI Komuta Merkezi) Orchestrator ajanısın.
 Tek görevin kullanıcının isteği için bir çalışma planı üretmek. Dosya değiştirme, komut çalıştırma.
 Proje dizini verildiyse gerektiği kadar Read/Glob/Grep ile incele; tüm projeyi okumaya çalışma.
 Planı Türkçe yaz. Küçük istekler için 1-2 adım yeterli; gereksiz adım ekleme.

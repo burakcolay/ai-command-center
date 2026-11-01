@@ -1,7 +1,7 @@
 import { Plus, Trash2, X } from "lucide-react";
 import { NAV_GROUPS, type ViewId } from "../lib/nav";
 import type { Chat, ModelInfo } from "../lib/types";
-import { DotMark } from "./DotMatrix";
+import { OrbitMark } from "./DotMatrix";
 import { ModelDot } from "./StatusDot";
 
 interface Props {
@@ -36,8 +36,13 @@ export function Sidebar(p: Props) {
             className="flex items-center gap-2.5"
             aria-label="Ana ekran"
           >
-            <DotMark />
-            <span className="font-mono text-[11px] tracking-[0.22em] text-fg">KOMUTA MERKEZİ</span>
+            <OrbitMark size={20} />
+            <span className="flex flex-col items-start leading-none">
+              <span className="font-mono text-[12px] tracking-[0.32em] text-fg">ORBIT</span>
+              <span className="mt-1 font-mono text-[8.5px] tracking-[0.18em] text-faint">
+                AI KOMUTA MERKEZİ
+              </span>
+            </span>
           </button>
           <button onClick={p.onClose} className="text-dim md:hidden" aria-label="Menüyü kapat">
             <X size={16} />
