@@ -33,7 +33,14 @@ class MockAdapter(ModelAdapter):
         notes="Arayüzü denemek için sahte yanıtlar üretir. Gerçek iş yapmaz.",
     )
     capabilities = Capabilities(
-        chat=True, tools=True, planning=True, headless=True, structured_output=True
+        chat=True,
+        tools=True,
+        planning=True,
+        coding=True,
+        review=True,
+        web_search=True,
+        headless=True,
+        structured_output=True,
     )
 
     def __init__(self, delay: float = 0.4) -> None:

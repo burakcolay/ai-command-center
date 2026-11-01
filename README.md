@@ -61,6 +61,20 @@ Kısa ve net işler için doğrudan **Görev** moduna geçip yazabilirsiniz. İy
 - kapsamın sınırı (ne yapılmayacağı),
 - "bitti" sayılma ölçütü, örneğin "testler geçsin".
 
+## İş dağılımı (model yönlendirici)
+
+Her iş bir türe ayrılır: planlama, sohbet, araştırma, tasarım, kod yazma, inceleme/test ve özetleme. Her türün varsayılan bir model sırası vardır.
+
+**Seçim kuralları:**
+- Gereken yeteneği olmayan model atlanır; örneğin yerel model asla kod yazmaz.
+- Sağlıksız, kotası dolmuş veya ücretli API gerektiren model atlanır.
+- Kotası %90'ı geçmiş bir model, uygun alternatif varsa yükü ona devreder.
+- İnceleme işleri, kodu yazan modelden farklı bir modele gider (ikinci göz).
+
+**Bugünkü dağılım ve Codex:** Bugün özetleme yerel modelde, diğer her şey Claude'da. Codex eklendiğinde ayar gerekmeden inceleme işlerini almaya başlar.
+
+**Elle müdahale:** **Model Yöneticisi → İş dağılımı**'nda her iş türü için o an seçilen model ve nedeni görünür; istersen elle sabitleyebilirsin. Her görev adımında hangi modelin çalıştığı da yazar.
+
 ## Kalite kontrolleri
 
 Ajanlar işini bitirince ORBIT projenizin test, lint ve tip kontrolü komutlarını **kendisi** çalıştırır ve sonucu diff'in yanında gösterir. Böylece "testler geçti" bilgisi bir modelin iddiası değil, ölçülmüş bir sonuç olur.

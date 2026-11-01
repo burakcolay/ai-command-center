@@ -14,6 +14,7 @@ import type {
   TaskDiff,
   TaskEvent,
   Template,
+  WorkRoute,
 } from "./types";
 
 export class ApiError extends Error {
@@ -94,5 +95,8 @@ export const api = {
 
   models: (fresh = false) => req<ModelInfo[]>(`/models${fresh ? "?fresh=true" : ""}`),
   agents: () => req<Agent[]>("/agents"),
+  routing: () => req<WorkRoute[]>("/routing"),
+  setRoute: (kind: string, adapter: string) =>
+    req<WorkRoute[]>(`/routing/${kind}`, { method: "PUT", body: JSON.stringify({ adapter }) }),
   system: () => req<SystemInfo>("/system"),
 };

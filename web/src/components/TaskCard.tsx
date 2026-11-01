@@ -2,7 +2,7 @@ import { ChevronRight, FilePen, GitBranch, GitMerge, TriangleAlert, Undo2 } from
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { toolTarget } from "../lib/format";
-import { AGENT_LABEL, STATUS_LABEL } from "../lib/labels";
+import { ADAPTER_LABEL, AGENT_LABEL, STATUS_LABEL } from "../lib/labels";
 import type { Decision, Task, TaskEvent, TaskStatus, TaskStepState } from "../lib/types";
 import { ChecksPanel } from "./ChecksPanel";
 import { DiffView } from "./DiffView";
@@ -314,7 +314,7 @@ function StepRow({ step }: { step: TaskStepState }) {
       <div className="flex gap-3">
         <span className={`mt-[7px] inline-block size-1.5 shrink-0 rounded-full ${STEP_DOT[step.status]}`} />
         <div className="min-w-0 flex-1">
-          <StepHeader title={title} agent={step.agent} />
+          <StepHeader title={title} agent={step.agent} model={step.adapter_id} />
           {step.status === "reverted" && (
             <div className="mt-0.5 font-mono text-[10.5px] text-faint">geri alındı</div>
           )}
@@ -346,12 +346,23 @@ function StepRow({ step }: { step: TaskStepState }) {
   );
 }
 
-function StepHeader({ title, agent, writes }: { title: string; agent: string; writes?: boolean }) {
+function StepHeader({
+  title,
+  agent,
+  writes,
+  model,
+}: {
+  title: string;
+  agent: string;
+  writes?: boolean;
+  model?: string | null;
+}) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-[13.5px] text-fg">{title}</span>
       <span className="rounded-full border border-line-strong px-2 font-mono text-[10px] leading-[18px] text-dim">
         {AGENT_LABEL[agent] ?? agent}
+        {model && <span className="text-faint"> · {ADAPTER_LABEL[model] ?? model}</span>}
       </span>
       {writes && (
         <span className="flex items-center gap-1 font-mono text-[10px] text-dim" title="Bu adım dosya değiştirir">

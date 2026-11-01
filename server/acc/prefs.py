@@ -10,6 +10,7 @@ ALLOWED: dict[str, set[Any] | None] = {
     "notifications": {True, False},
     "quality": {"economy", "balanced", "best"},
     "claude_model": {"default", "sonnet", "opus", "fable"},
+    "routing": None,  # {work kind: adapter id | "auto"}; validated by the API
 }
 
 

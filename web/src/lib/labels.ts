@@ -51,3 +51,13 @@ export const AGENT_LABEL: Record<string, string> = {
   reviewer: "İnceleme",
   docs: "Dokümantasyon",
 };
+
+/** Short model names for step badges. */
+export const ADAPTER_LABEL: Record<string, string> = {
+  claude_code: "Claude",
+  codex: "Codex",
+  ollama: "Yerel",
+  grok: "Grok",
+  mock: "Demo",
+};
+

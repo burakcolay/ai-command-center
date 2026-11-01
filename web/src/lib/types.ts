@@ -213,8 +213,21 @@ export interface Agent {
   name: string;
   description: string;
   tools: string[];
-  adapters: string[];
   writes_files: boolean;
+  work: string | null;
+  work_label: string | null;
+}
+
+export interface WorkRoute {
+  id: string;
+  label: string;
+  description: string;
+  order: string[];
+  override: string;
+  candidates: { id: string; name: string; eligible: boolean }[];
+  current: string | null;
+  current_name: string | null;
+  reason: string;
 }
 
 export type ComposerMode = "chat" | "research" | "design" | "edit" | "task";

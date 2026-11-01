@@ -37,6 +37,7 @@ from acc.models import (
     TaskStep,
 )
 from acc.models import utcnow as _now
+from acc.routing import AGENT_WORK, Router
 
 TERMINAL = {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
 SETTLED = {StepStatus.DONE, StepStatus.REVERTED}  # steps that never run again
@@ -104,6 +105,7 @@ class ExecError(Exception):
 class Orchestrator:
     def __init__(self, registry: Registry) -> None:
         self.registry = registry
+        self.router = Router(registry)
         self._jobs: set[asyncio.Task[None]] = set()
         self._runs: dict[int, tuple[str, str]] = {}  # task_id -> (adapter_id, run_id)
         self._slots = asyncio.Semaphore(config.MAX_PARALLEL_TASKS)
@@ -213,14 +215,23 @@ class Orchestrator:
         return payload
 
     async def _run_adapter(
-        self, task_id: int, adapter_ids: list[str], req: RunRequest, tag: dict[str, Any]
+        self,
+        task_id: int,
+        work: str,
+        req: RunRequest,
+        tag: dict[str, Any],
+        avoid: set[str] | None = None,
     ) -> tuple[str, dict[str, Any]]:
-        """Run the first available adapter; stream its events; return (adapter_id, result)."""
-        adapter, skipped = await self.registry.pick(adapter_ids, needs_tools=bool(req.tools))
-        for reason in skipped:
-            self._log(task_id, f"Atlandı — {reason}")
+        """Let the router pick a model for this kind of work, run it, stream its events."""
+        choice = await self.router.pick(work, needs_tools=bool(req.tools), avoid=avoid)
+        for reason in choice.skipped:
+            self._event(task_id, "log", {"text": f"Atlandı — {reason}", **tag})
+        adapter = choice.adapter
         if adapter is None:
-            raise ExecError("Kullanılabilir model yok. Model Yöneticisi'ne bakın.")
+            raise ExecError("Bu iş için kullanılabilir model yok. Model Yöneticisi'ne bakın.")
+        self._event(
+            task_id, "log", {"text": f"Model: {adapter.info.name} · {choice.reason}", **tag}
+        )
         run_id = uuid.uuid4().hex
         self._runs[task_id] = (adapter.info.id, run_id)
         try:
@@ -280,7 +291,7 @@ class Orchestrator:
             read_dirs=attachments.read_dirs() if t_attachments else [],
         )
         try:
-            adapter_id, result = await self._run_adapter(task_id, agent.adapters, req, {})
+            adapter_id, result = await self._run_adapter(task_id, "plan", req, {})
         except QuotaExceeded as e:
             self._pause(task_id, e.resets_at)
             return
@@ -430,8 +441,10 @@ class Orchestrator:
             read_dirs=attachments.read_dirs() if has_attachments else [],
         )
         try:
+            work = AGENT_WORK.get(agent.id, "code")
+            avoid = self._code_authors(task_id) if work == "review" else None
             adapter_id, result = await self._run_adapter(
-                task_id, agent.adapters, req, {"step": step_id}
+                task_id, work, req, {"step": step_id}, avoid
             )
             commit = None
             if agent.writes_files:
@@ -478,6 +491,19 @@ class Orchestrator:
         await gitops.discard(wt)  # checks never leave changes behind
         self._update(task_id, checks=results)
         self._log(task_id, f"Kalite kontrolleri: {checks.summary(results)}")
+
+    @staticmethod
+    def _code_authors(task_id: int) -> set[str]:
+        """Models that wrote this task's code, so a review can prefer a different one."""
+        with session() as s:
+            rows = s.scalars(
+                select(TaskStep.adapter_id).where(
+                    TaskStep.task_id == task_id,
+                    TaskStep.status == StepStatus.DONE,
+                    TaskStep.agent.in_(["developer", "docs"]),
+                )
+            )
+            return {r for r in rows if r}
 
     @staticmethod
     def _has_pending(task_id: int) -> bool:

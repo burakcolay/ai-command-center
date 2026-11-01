@@ -15,7 +15,6 @@ class Agent:
     name: str
     description: str
     tools: list[str]
-    adapters: list[str]  # preference order
     writes_files: bool
     plannable: bool = True  # may the Orchestrator assign plan steps to it?
 
@@ -32,7 +31,6 @@ AGENTS: dict[str, Agent] = {
             "Orchestrator",
             "İsteği analiz eder, alt görevlere böler, ajan ve model seçer, plan sunar.",
             READ_ONLY_TOOLS,
-            ["claude_code", "mock"],
             False,
             plannable=False,
         ),
@@ -42,7 +40,6 @@ AGENTS: dict[str, Agent] = {
             "Seninle konuşarak fikirleri netleştirir; kodu okuyup web'de araştırabilir, "
             "dosya değiştirmez.",
             [*READ_ONLY_TOOLS, "WebSearch", "WebFetch"],
-            ["claude_code", "mock"],
             False,
             plannable=False,
         ),
@@ -51,7 +48,6 @@ AGENTS: dict[str, Agent] = {
             "Araştırma",
             "Kod tabanı, dokümantasyon ve web araştırması yapar.",
             [*READ_ONLY_TOOLS, "WebSearch", "WebFetch"],
-            ["claude_code", "mock"],
             False,
         ),
         Agent(
@@ -59,7 +55,6 @@ AGENTS: dict[str, Agent] = {
             "Mimar",
             "Teknik mimari, veri modeli ve teknoloji seçimleri.",
             READ_ONLY_TOOLS,
-            ["claude_code", "mock"],
             False,
         ),
         Agent(
@@ -67,7 +62,6 @@ AGENTS: dict[str, Agent] = {
             "Geliştirici",
             "Kod yazar ve dosyaları değiştirir. Yalnızca görevin izole worktree'sinde çalışır.",
             [*READ_ONLY_TOOLS, "Edit", "Write", "Bash"],
-            ["claude_code", "mock"],
             True,
         ),
         Agent(
@@ -75,7 +69,6 @@ AGENTS: dict[str, Agent] = {
             "QA",
             "Testleri çalıştırır, hataları raporlar. Dosya değiştiremez.",
             [*READ_ONLY_TOOLS, "Bash"],
-            ["claude_code", "mock"],
             False,
         ),
         Agent(
@@ -83,7 +76,6 @@ AGENTS: dict[str, Agent] = {
             "Kod İnceleme",
             "Kod kalitesi, güvenlik ve performans incelemesi.",
             READ_ONLY_TOOLS,
-            ["claude_code", "mock"],
             False,
         ),
         Agent(
@@ -91,7 +83,6 @@ AGENTS: dict[str, Agent] = {
             "Dokümantasyon",
             "README, teknik doküman ve proje notları yazar.",
             [*READ_ONLY_TOOLS, "Edit", "Write"],
-            ["claude_code", "mock"],
             True,
         ),
     ]

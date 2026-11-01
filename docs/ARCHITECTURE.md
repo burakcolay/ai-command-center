@@ -67,7 +67,23 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 - **Log maskeleme:** Görev olayları, adım özetleri, audit kayıtları ve kontrol çıktıları kaydedilmeden önce `security.redact`'tan geçer.
 - **Alt süreç ortamı:** Faturalama anahtarları ve ORBIT'in kendi Python sanal ortamı (`VIRTUAL_ENV`, `PATH` girdisi) alt süreçlere aktarılmaz. Böylece ajanın `python`'u projenin Python'u olur.
 
-## 4. Adaptör sözleşmesi
+## 4. Model yönlendirici (`routing.py`)
+
+**İş türleri ve sıraları:**
+- Her ajan bir iş türüne bağlıdır (`AGENT_WORK`); her türün varsayılan model sırası ve gereken yetenekleri vardır (`WORK_KINDS`).
+- Sıralarda henüz kurulu olmayan adaptörler de (`codex`) yer alır. Adaptör kaydedildiği an devreye girer, Orchestrator'a dokunulmaz.
+
+**Seçim kuralları (`Router.pick`):**
+- Yetenek kontrolü yapılır.
+- Maliyet koruması uygulanır.
+- Model sağlıklı olmalıdır; cooldown durumundakiler atlanır.
+- **Kota baskısı:** Doğrulanmış kullanımı %90'ı geçen modelin yerine, uygun alternatif varsa o seçilir.
+- **İkinci görüş:** İnceleme işleri, görevde kodu yazan modelden farklı bir modeli tercih eder.
+- **Kullanıcı sabitlemesi:** `prefs.routing`. API, yeteneği olmayan bir modelin sabitlenmesini reddeder; yönlendirici de sabitlenmiş olsa bile yetenek kontrolünü uygular.
+
+**Şeffaflık:** Seçilen model ve nedeni görev günlüğüne yazılır; adımın `adapter_id`'si arayüzde gösterilir.
+
+## 4b. Adaptör sözleşmesi
 
 `server/acc/adapters/base.py` dosyasındaki `ModelAdapter`:
 
@@ -220,7 +236,8 @@ Her aktif durumdan cancel ──► cancelled
 - [x] **Güvenlik sertleştirmesi:** CSRF, gizli dosya erişimi, log maskeleme, özel veri klasörü, temiz alt süreç ortamı
 - [x] **Düzenleme oturumu** (hızlı değişiklik, geri alma, birleştirme)
 - [x] **Görsel ekleme + tasarım varyantları**
-- [ ] **Sıradaki:** model yönlendirici
+- [x] **Model yönlendirici** (iş türüne göre seçim, kota baskısı, ikinci görüş, elle sabitleme)
+- [ ] **Sıradaki adaylar:** Codex adaptörü (abonelik alınınca); GitHub entegrasyonu; iOS simülatör ekran görüntüsü; Discussion Room
 - [ ] **Diğer adaylar:** GitHub entegrasyonu (Faz 4: branch, PR hazırlama — push/merge onaylı); web projeleri için görsel önizleme
 - [ ] Grok Build adaptörü (ücretsiz erişim doğrulanırsa)
 - [ ] Faz 4–8: dokümandaki sırayla

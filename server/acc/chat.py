@@ -26,11 +26,11 @@ from acc.db import session
 from acc.designs import DESIGN_SYSTEM
 from acc.events import broker
 from acc.models import Chat, Message, Project, Task
+from acc.routing import Router
 
 TRANSCRIPT_LIMIT = 150_000  # chars of history a task snapshot may carry
 COMPACT_AT = 30_000  # unsummarised history longer than this gets summarised
 KEEP_RECENT = 6  # newest messages always sent verbatim
-SUMMARIZERS = ["ollama", "claude_code", "mock"]  # free local model first
 WEB_ONLY = ["WebSearch", "WebFetch"]
 NO_TOOLS_NOTE = (
     "(Not: Bu yanıtı yerel bir model veriyor; proje dosyalarına ve web'e erişimi yok. "
@@ -114,6 +114,7 @@ def save_report(text: str, question: str, project_name: str | None) -> Path:
 class ChatService:
     def __init__(self, registry: Registry) -> None:
         self.registry = registry
+        self.router = Router(registry)
         self._runs: dict[int, tuple[str, str]] = {}  # message_id -> (adapter_id, run_id)
         self._cancelling: set[int] = set()
         self._jobs: set[asyncio.Task[None]] = set()
@@ -164,7 +165,7 @@ class ChatService:
             f"MEVCUT ÖZET:\n{previous}\n\nÖZETE EKLENECEK MESAJLAR:\n{older}\n\n"
             "Bunları tek ve güncel bir özette birleştir."
         )
-        adapter, _ = await self.registry.pick(SUMMARIZERS)
+        adapter = (await self.router.pick("summarize")).adapter  # free local model first
         if adapter is None:
             return
         req = RunRequest(prompt=prompt, system_prompt=SUMMARY_SYSTEM, tools=[])
@@ -217,8 +218,12 @@ class ChatService:
             project_path = project.path if project else None
 
         agent = AGENTS["research" if research else "assistant"]
-        preferred = [requested] if requested else agent.adapters
-        adapter, skipped = await self.registry.pick(preferred, needs_tools=research)
+        work = "design" if design else "research" if research else "chat"
+        if requested:  # the user picked a model for this chat message
+            adapter, skipped = await self.registry.pick([requested])
+        else:
+            choice = await self.router.pick(work, needs_tools=research)
+            adapter, skipped = choice.adapter, choice.skipped
         if adapter is None:
             reason = "; ".join(skipped) or "kayıtlı model yok"
             self._finish(message_id, f"Yanıt verecek model yok ({reason}).", "error")

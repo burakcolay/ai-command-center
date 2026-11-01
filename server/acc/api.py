@@ -19,6 +19,7 @@ from acc import (
     memory,
     notify,
     prefs,
+    routing,
     serialize,
     templates,
 )
@@ -487,7 +488,38 @@ async def list_models(fresh: bool = False):
 
 @router.get("/agents")
 def list_agents():
-    return [a.__dict__ for a in AGENTS.values()]
+    return [
+        {**a.__dict__, "work": routing.AGENT_WORK.get(a.id), "work_label": _work_label(a.id)}
+        for a in AGENTS.values()
+    ]
+
+
+def _work_label(agent_id: str) -> str | None:
+    kind = routing.WORK_KINDS.get(routing.AGENT_WORK.get(agent_id, ""))
+    return kind.label if kind else None
+
+
+@router.get("/routing")
+async def get_routing():
+    return await orchestrator.router.describe()
+
+
+class RouteIn(BaseModel):
+    adapter: str = Field(max_length=64)
+
+
+@router.put("/routing/{kind}")
+async def put_routing(kind: str, body: RouteIn):
+    if kind not in routing.WORK_KINDS:
+        raise HTTPException(404)
+    if body.adapter != "auto":
+        adapter = registry.get(body.adapter)
+        if adapter is None or orchestrator.router.eligible(kind, adapter, False):
+            raise HTTPException(400, "Bu model bu işi yapamaz.")
+    current = dict(routing.overrides())
+    current[kind] = body.adapter
+    prefs.put("routing", current)
+    return await orchestrator.router.describe()
 
 
 class PrefIn(BaseModel):

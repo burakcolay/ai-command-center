@@ -1,9 +1,10 @@
 import { RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { ADAPTER_LABEL } from "../lib/labels";
 import { ModelDot } from "../components/StatusDot";
 import { BILLING_LABEL, MODEL_STATE_LABEL, USAGE_SOURCE_LABEL, WINDOW_LABEL } from "../lib/labels";
-import type { ModelInfo } from "../lib/types";
+import type { ModelInfo, WorkRoute } from "../lib/types";
 import { Page } from "./Page";
 
 const CAP_LABEL: Record<string, string> = {
@@ -123,6 +124,8 @@ export function ModelsView({
         ))}
       </div>
 
+      <WorkRouting onError={onError} />
+
       <div className="label mt-10 mb-2">Planlanan adaptörler</div>
       <div className="divide-y divide-line overflow-hidden rounded-xl border border-line">
         {PLANNED.map((m) => (
@@ -195,5 +198,67 @@ function LocalModels({
         16 GB RAM için 7–8B, Q4 modeller önerilir. Model yalnızca kullanılırken RAM'e yüklenir.
       </p>
     </div>
+  );
+}
+
+/** Which model gets which kind of work, why, and a per-kind override. */
+function WorkRouting({ onError }: { onError: (msg: string) => void }) {
+  const [routes, setRoutes] = useState<WorkRoute[] | null>(null);
+
+  useEffect(() => {
+    api.routing().then(setRoutes).catch((e) => onError(e.message));
+  }, [onError]);
+
+  const set = async (kind: string, adapter: string) => {
+    try {
+      setRoutes(await api.setRoute(kind, adapter));
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
+  return (
+    <>
+      <div className="label mt-10 mb-1">İş dağılımı</div>
+      <p className="mb-2 text-[12.5px] leading-relaxed text-dim">
+        Her iş türü için o an hangi modelin çalışacağı. "Otomatik"te sağlığı, kotası ve yeteneği
+        uygun ilk model seçilir; inceleme işleri kodu yazandan farklı bir modele gider. Yeni bir
+        model (ör. Codex) eklendiğinde kendi işlerini otomatik alır.
+      </p>
+      <div className="divide-y divide-line overflow-hidden rounded-xl border border-line">
+        {routes === null && <div className="bg-panel px-4 py-3 font-mono text-[11px] text-faint">yükleniyor…</div>}
+        {routes?.map((r) => (
+          <div key={r.id} className="flex flex-col gap-2 bg-panel px-4 py-3 md:flex-row md:items-center md:gap-4">
+            <div className="min-w-0 md:w-56 md:shrink-0">
+              <div className="text-[13.5px] text-fg">{r.label}</div>
+              <div className="text-[11.5px] leading-snug text-faint">{r.description}</div>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] text-fg">
+                {r.current_name ?? <span className="text-danger">uygun model yok</span>}
+              </div>
+              <div className="truncate font-mono text-[10.5px] text-faint" title={r.reason}>
+                {r.reason} · sıra: {r.order.map((id) => ADAPTER_LABEL[id] ?? id).join(" → ")}
+              </div>
+            </div>
+            <select
+              value={r.override}
+              onChange={(e) => void set(r.id, e.target.value)}
+              className="w-full cursor-pointer rounded-md border border-line-strong bg-ink px-2 py-1 font-mono text-[11.5px] text-fg focus:outline-none md:w-40"
+              aria-label={`${r.label} için model`}
+            >
+              <option value="auto">Otomatik</option>
+              {r.candidates
+                .filter((c) => c.eligible)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }

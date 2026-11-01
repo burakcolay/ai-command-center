@@ -10,7 +10,7 @@ export function AgentsView({ agents }: { agents: Agent[] }) {
   return (
     <Page
       title="Ajanlar"
-      subtitle="Her ajan bir rol, izinli araçlar ve tercih edilen modellerden oluşur. Araç kısıtları CLI seviyesinde uygulanır."
+      subtitle="Her ajan bir rol ve izinli araçlardan oluşur; hangi modelin çalışacağını iş türüne göre yönlendirici seçer (Model Yöneticisi → İş dağılımı)."
     >
       <div className="grid gap-3 md:grid-cols-2">
         {agents.map((a) => (
@@ -22,6 +22,9 @@ export function AgentsView({ agents }: { agents: Agent[] }) {
               </span>
             </div>
             <p className="mt-1 text-[13px] leading-relaxed text-dim">{a.description}</p>
+            {a.work_label && (
+              <div className="mt-2 font-mono text-[10.5px] text-faint">İş türü: {a.work_label}</div>
+            )}
             <div className="mt-3 flex flex-wrap gap-1.5">
               {a.tools.map((t) => (
                 <span key={t} className="rounded border border-line px-1.5 font-mono text-[10px] leading-[18px] text-dim">
