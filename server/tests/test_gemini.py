@@ -20,6 +20,18 @@ with open(os.environ["FAKE_LOG"], "w") as f:
     json.dump({{"args": args, "cwd": os.getcwd(), "stdin_tty": sys.stdin.isatty(),
                "gemini_key": "GEMINI_API_KEY" in os.environ}}, f)
 mode = os.environ.get("FAKE_MODE", "text")
+prompt = args[args.index("--print") + 1]
+retry = prompt.startswith("Önceki denemede")
+with open(os.environ["FAKE_LOG"] + ".calls", "a") as f:
+    f.write("retry\n" if retry else "first\n")
+if mode == "denied" or (mode == "denied_once" and not retry):
+    # What the real agy printed when the model wanted to run a command (user's Mac, 1.4.12).
+    print(json.dumps({{"conversation_id": "c1", "status": "SUCCESS", "response": "",
+                      "num_turns": 1, "denied_actions": [{{"action": "command",
+                      "display_name": "RunCommand"}}]}}))
+    sys.exit(0)
+if mode == "denied_once":
+    mode = "schema"
 if mode == "quota":
     print(json.dumps({{"status": "ERROR", "error": "Quota exceeded for this account"}}))
     sys.exit(1)
@@ -118,3 +130,26 @@ async def _ok():
     from acc.adapters.base import Health
 
     return Health(ModelState.AVAILABLE, "test")
+
+
+async def test_never_asked_to_run_commands(agy, tmp_path):
+    await _events(agy, RunRequest(prompt="İncele", cwd=tmp_path, json_schema={"type": "object"}))
+    prompt = json.loads(agy.log.read_text())["args"][1]
+    assert "terminal komutu çalıştıramazsın" in prompt
+    assert prompt.endswith("Cevabını yalnızca istenen JSON olarak ver.")
+
+
+async def test_a_denied_command_gets_one_retry(agy, monkeypatch, tmp_path):
+    monkeypatch.setenv("FAKE_MODE", "denied_once")
+    req = RunRequest(prompt="İncele", cwd=tmp_path, json_schema={"type": "object"})
+    events = await _events(agy, req)
+    calls = (tmp_path / "run.json.calls").read_text().split()
+    assert calls == ["first", "retry"]
+    assert events[-1].data["structured"] == {"ozet": "iyi", "sorunlar": []}
+
+
+async def test_an_empty_answer_is_an_error_not_a_silent_pass(agy, monkeypatch, tmp_path):
+    monkeypatch.setenv("FAKE_MODE", "denied")
+    events = await _events(agy, RunRequest(prompt="x", cwd=tmp_path, json_schema={}))
+    assert events[-1].kind == "error" and "RunCommand" in events[-1].data["text"]
+    assert len((tmp_path / "run.json.calls").read_text().split()) == 2  # one retry only

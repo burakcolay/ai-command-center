@@ -116,7 +116,8 @@ Sıralarda henüz kurulu olmayan adaptörler de (`codex`) yer alır. Adaptör ka
 - Kullanıcının Mac'inde doğrulandı: `agy -p "…" --output-format json < /dev/null > dosya` terminalsiz çalışır, 0 ile çıkar ve tek bir JSON yazar: `{conversation_id, status: "SUCCESS", response, duration_seconds, num_turns, usage}`. Bayraklar `agy --help`'ten alındı: `--json-schema`, `--effort`, `--sandbox`, `--add-dir`, `--print-timeout`.
 - Rolü yalnızca inceleme ve özettir; asla değişikliği yazan model olmaz (`coding=False`). Terminalsiz `agy` izin istemlerine cevap veremez, bu yüzden dosya düzenleyemez ve komut çalıştıramaz. Ayrıca `--sandbox` ile çalışır, `--dangerously-skip-permissions` hiç kullanılmaz. Özetler boş bir geçici klasörde çalışır.
 - Google API anahtarı ve Vertex/Cloud değişkenleri alt sürece verilmez; yalnızca giriş yapılmış hesap kullanılabilir. Sağlık kontrolü `agy models` çıkış koduna bakar.
-- Henüz doğrulanmadı: `--json-schema` sonucunun yeri. Adaptör ayrı bir alanı ya da JSON olarak yazılmış `response`'u kabul eder.
+- Kullanıcının denemesinde model kodu test etmek için komut çalıştırmak istedi; terminalsiz agy bunu reddetti ve `status: SUCCESS`, boş `response`, `denied_actions: [{action: "command"}]` döndü. Bu yüzden istemin başında komut çalıştıramayacağı söylenir; yine denerse bir kez "araç kullanmadan cevap ver" diye tekrar sorulur, yine boşsa inceleme hata olarak günlüğe düşer (sessizce "sorun yok" sayılmaz).
+- Henüz doğrulanmadı: başarılı bir `--json-schema` cevabının yeri. Adaptör ayrı bir alanı ya da JSON olarak yazılmış `response`'u kabul eder.
 
 ### Claude Code: doğrulanmış davranış (CLI 2.1.x)
 
