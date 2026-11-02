@@ -1,6 +1,6 @@
-import { ArrowUp, FolderKanban, LayoutTemplate, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, FileText, FolderKanban, LayoutTemplate, Paperclip, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type PendingAttachment, uploadImage } from "../lib/attachments";
+import { ACCEPT, isAttachable, type PendingAttachment, uploadFile } from "../lib/attachments";
 import type { Project, Template } from "../lib/types";
 import { TemplatePicker } from "./TemplatePicker";
 
@@ -66,11 +66,13 @@ export function Composer(p: Props) {
   }, [text]);
 
   const addFiles = async (list: FileList | File[]) => {
-    const images = Array.from(list).filter((f) => f.type.startsWith("image/"));
-    for (const file of images.slice(0, 6 - files.length)) {
+    const all = Array.from(list);
+    const usable = all.filter(isAttachable);
+    if (usable.length < all.length) p.onError("Yalnızca görsel ya da .md / .txt dosyası eklenebilir.");
+    for (const file of usable.slice(0, 6 - files.length)) {
       setUploading((n) => n + 1);
       try {
-        const a = await uploadImage(file);
+        const a = await uploadFile(file);
         setFiles((prev) => [...prev, a]);
       } catch (e) {
         p.onError((e as Error).message);
@@ -144,11 +146,21 @@ export function Composer(p: Props) {
         <div className="flex flex-wrap gap-2 px-3 pt-3">
           {files.map((f) => (
             <div key={f.id} className="group relative">
-              <img
-                src={f.preview}
-                alt={f.name}
-                className="size-14 rounded-lg border border-line-strong object-cover"
-              />
+              {f.kind === "text" ? (
+                <div
+                  className="flex h-14 max-w-48 items-center gap-2 rounded-lg border border-line-strong px-3 text-[12px] text-dim"
+                  title={f.name}
+                >
+                  <FileText size={14} className="shrink-0" />
+                  <span className="truncate">{f.name}</span>
+                </div>
+              ) : (
+                <img
+                  src={f.preview}
+                  alt={f.name}
+                  className="size-14 rounded-lg border border-line-strong object-cover"
+                />
+              )}
               <button
                 onClick={() => setFiles((prev) => prev.filter((x) => x.id !== f.id))}
                 className="absolute -right-1.5 -top-1.5 grid size-5 place-items-center rounded-full border border-line-strong bg-panel text-dim hover:text-fg"
@@ -212,7 +224,7 @@ export function Composer(p: Props) {
           <input
             ref={fileInput}
             type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
+            accept={ACCEPT}
             multiple
             hidden
             onChange={(e) => {
@@ -223,8 +235,8 @@ export function Composer(p: Props) {
           <button
             type="button"
             onClick={() => fileInput.current?.click()}
-            title="Görsel ekle (ya da yapıştır / sürükle)"
-            aria-label="Görsel ekle"
+            title="Görsel ya da .md / .txt dosyası ekle (ya da yapıştır / sürükle)"
+            aria-label="Dosya ekle"
             className="grid size-7 shrink-0 place-items-center rounded-md text-dim transition-colors hover:text-fg"
           >
             <Paperclip size={14} strokeWidth={1.6} />

@@ -80,19 +80,21 @@ def _edit(client):
 
 def test_economy_means_one_assistant_and_no_team(quality):
     quality("economy")
-    tools, system, agents = assistant.setup(assistant.PROJECT_TOOLS)
-    assert "Agent" not in tools and agents is None and "EKİP" not in system
+    plan = assistant.setup(assistant.PROJECT_TOOLS)
+    assert "Agent" not in plan.tools and plan.agents is None and "EKİP" not in plan.system
 
 
 def test_subagents_reach_claude_code(quality):
-    tools, system, agents = assistant.setup(assistant.PROJECT_TOOLS)
+    plan = assistant.setup(assistant.PROJECT_TOOLS)
+    tools, system, agents = plan.tools, plan.system, plan.agents
     args = ClaudeCodeAdapter()._args(RunRequest(prompt="x", tools=tools, agents=agents))
     defined = json.loads(args[args.index("--agents") + 1])
     assert set(defined) == {"arastirmaci", "tasarimci", "test-yazari", "inceleyici"}
     assert defined["inceleyici"]["tools"] == ["Read", "Glob", "Grep", "Bash"]
     assert all(a["model"] == "inherit" and "label" not in a for a in defined.values())
     assert "Agent" in args[args.index("--allowedTools") + 1]
-    assert "tasarimci (Tasarımcı)" in system
+    assert "- tasarimci: Tasarımcı" in system
+    assert "--strict-mcp-config" in args  # the user's own MCP servers never load
 
 
 def test_subagent_steps_are_labelled_and_their_words_stay_inside():
@@ -235,3 +237,20 @@ async def test_with_background_subagents_the_last_result_is_the_answer(tmp_path)
     events = [ev async for ev in ClaudeCodeAdapter(binary=str(script)).run(RunRequest("x"), "r")]
     results = [ev for ev in events if ev.kind == "result"]
     assert [r.data["text"] for r in results] == ["İkisi de hazır."]
+
+
+async def test_restricted_mode_is_used_when_the_cli_has_it(tmp_path):
+    status = json.dumps({"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty"})
+    script = tmp_path / "claude"
+    script.write_text(
+        "#!/bin/sh\n"
+        f"if [ \"$1\" = auth ]; then echo '{status}'; exit 0; fi\n"
+        'if [ "$1" = --help ]; then echo "  --restricted   Restricted mode"; exit 0; fi\n'
+    )
+    script.chmod(0o755)
+    a = ClaudeCodeAdapter(binary=str(script))
+    args = a._args(RunRequest("x"))
+    assert "--setting-sources" in args and "--restricted" not in args  # before the check
+    await a.health_check()
+    args = a._args(RunRequest("x"))
+    assert "--restricted" in args and "--setting-sources" not in args

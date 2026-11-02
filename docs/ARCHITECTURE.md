@@ -59,7 +59,7 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
   - Ağ erişimi yalnızca paket kayıtlarıyla (npm, PyPI) sınırlıdır.
   - `failIfUnavailable: true`: sandbox başlayamazsa komut hiç çalışmaz. Bu hem kapalı hem açık durumda test edildi.
 - **Git işlemlerini her zaman Orbit yapar.** Asistan commit, merge veya push yapmaz; her tur sonunda Orbit commit'ler. Derleme ve test çöpleri (`__pycache__`, `node_modules`, `.pytest_cache` …) proje `.gitignore`'u olmasa bile commit'lere girmez.
-- **Repodaki `.claude/settings.json` güvenilmez veridir.** Claude Code `--setting-sources user` ile başlatılır; böylece bir repo kendi hook'larıyla komut çalıştıramaz.
+- **Repodaki `.claude/settings.json` güvenilmez veridir.** CLI destekliyorsa Claude Code `--restricted` ile başlar (sağlık kontrolü `--help`'e bakar): hiçbir ayar dosyası yüklenmez, dosya araçları çalışma klasörü ve `--add-dir` ile sınırlıdır, `.git` ve ayar dosyalarına yazılamaz. Doğrulandı: klasör dışından okuma ve `.git/hooks/pre-commit`'e yazma reddedildi. Eski CLI'da `--setting-sources user` kullanılır. Her çalıştırma `--strict-mcp-config` ile yalnızca Orbit'in verdiği MCP sunucularını görür.
 - Proje dosyaları, görseller, web sayfaları ve skill'ler güvenilmeyen veri sayılır. Asistanın sistem prompt'u bunu belirtir. Daha önemlisi, izinler zaten koddadır; prompt değiştirse bile araç listesi değişmez.
 - Bir proje uygulamadan kaldırıldığında diskteki dosyalar silinmez.
 - **Gizli dosyalar** (`security.SECRET_FILE_GLOBS`): Her Claude çalıştırmasına `permissions.deny` olarak `Read(**/.env)`, `Read(**/*.p8)` gibi kurallar verilir. Claude Code bu kuralları sandbox içindeki shell komutlarına da uygular; doğrulandı: `cat .env` reddedildi, `.env.example` okunabiliyor.
@@ -182,10 +182,27 @@ Kullanıcı model seçmez; iş bölümü koddadır.
   - Ne zaman çalışır (`review.wanted`): Ekonomik hiç; Dengeli başka bir model varsa ya da değişiklik büyükse (≥5 dosya veya ≥200 satır); En iyi her zaman (gerekirse Claude ayrı oturumda).
   - İnceleme başarısız olursa (kota, hata) değişiklik korunur, günlüğe yazılır.
 
+### Proje Kartı ve alan uzmanları (`card.py`)
+
+- **Kart:** Proje kökündeki `PROJE.md`. Fikir ya da spec gelince, yeni bir projede veya birden çok alanı kapsayan büyük bir işte lider önce kartı yazar ve onay ister (talimat `assistant.SYSTEM`). Kart her turda liderin istemine (`card.lead_block`, 16 bin karakter) ve inceleyicinin istemine eklenir.
+- **Ekip tablosu:** `| Alan | Teknoloji | Klasör | Yapan |`. `card.team` okur (Türkçe karakter ve başlık çeşitlerine dayanıklı, en fazla 8 alan). `assistant.specialists` her alana bir `<alan>-gelistirici` kurar:
+  - Talimatında kartın kendisi (8 bin karakter) ve "kartı ve klasöründeki kodu okumadan yazma, yalnızca kendi klasörüne yaz" kuralı vardır.
+  - Model Dengeli'de `sonnet`, En iyi'de `inherit`; Ekonomik'te uzman yoktur. Salt okunur projede kod yazan uzman kurulmaz.
+- **Codex aynı anda** (`mcp_codex.py`): "Yapan: Codex" olan alana ayrıca bir `<alan>-codex` koordinatörü kurulur.
+  - Koordinatörün tek yazma yolu `mcp__orbit__codex_gorev` aracıdır. Orbit, o tur için Claude Code'a kendi küçük MCP sunucusunu verir (`--mcp-config`, `--strict-mcp-config`; kullanıcının MCP sunucuları yüklenmez).
+  - Aracın tek girdisi görev metnidir. Kök klasör (o sohbetin izole kopyası), ChatGPT girişi, `workspace-write` sandbox'ı ve ağın kapalı olması Orbit tarafından sabitlenir; model bunları değiştiremez.
+  - Arka plandaki Claude alt ajanlarıyla birlikte iki abonelik aynı anda çalışır. Kota dolarsa araç `CODEX_KULLANILAMADI` döner ve lider alanı Claude geliştiricisine verir. Uzun işler için Claude'a `MCP_TOOL_TIMEOUT=30 dk` verilir.
+  - Codex o turda yazdıysa inceleme ne Claude'a ne Codex'e, üçüncü bir modele (Gemini) gider.
+- **Gerçek denemeler** (Claude Code 2.1.316; Codex tarafı sahte CLI ile):
+  - Lider Backend'i Codex koordinatörüne, Frontend'i Claude uzmanına aynı anda verdi.
+  - Koordinatör kartı, klasör sınırını ve kabul ölçütünü içeren bir görev yazdı, sonucu kontrol edip bir kez düzeltme istedi.
+  - Spec'ten yazılan kartta 9 bölüm vardı ve Codex hazırken Backend'i Codex'e verdi.
+- **Görüntüleme:** `GET /projects/{id}/card` kartın en yeni halini döndürür: henüz birleştirilmemişse sohbetin kopyasındakini (`pending`), değilse projedekini (`merged`).
+
 ### Görseller ve tasarımlar
 
 - **Yüklemeler** (`attachments.py`):
-  - Dosya türü uzantıdan değil ilk baytlardan belirlenir; yalnızca PNG, JPEG, WebP ve GIF kabul edilir, en fazla 10 MB.
+  - Görsellerde tür uzantıdan değil ilk baytlardan belirlenir: PNG, JPEG, WebP, GIF, en fazla 10 MB. Metin dosyaları (`.md`, `.txt`) NUL baytı olmayan geçerli UTF-8 olmalıdır, en fazla 1 MB. Metin dosyaları `text/plain` ve `nosniff` ile sunulur, asla sayfa olarak işlenmez.
   - Görseller `data/uploads/` klasörüne kaydedilir.
   - Ek kimliği ya 32 karakterlik hex bir dosya kimliğidir ya da `design:<mesaj>:<n>` biçimindedir; bu ikisi dışındaki her şey reddedilir, bu da yol geçişini (path traversal) engeller.
   - Modele yalnızca dosya yolları ve `--add-dir` (okuma) verilir.
@@ -258,6 +275,9 @@ waiting_approval ──reject──► cancelled (worktree + branch silinir)
 - [x] **Görsel ekleme + tasarım varyantları**
 - [x] **Model yönlendirici** (kota baskısı, sağlık, elle sabitleme)
 - [x] **GitHub PR:** sohbetin değişikliklerini tek tıkla PR olarak gönderme ve güncelleme
-- [ ] **Sıradaki adaylar:** iOS simülatör ekran görüntüsü; web projeleri için görsel önizleme
+- [x] **Proje Kartı + alan uzmanları:** spec/.md'den kart, karttan uzmanlar, kart her ajanın talimatında
+- [x] **Claude ve Codex aynı anda:** Orbit'in MCP köprüsüyle Codex bir alanı paralel yazar
+- [x] **Kısıtlı mod** (`--restricted`) ve tur başına yalnızca Orbit'in MCP sunucuları
+- [ ] **Sıradaki adaylar:** iOS simülatör ekran görüntüsü (Mac'te doğrulanmalı); web projeleri için canlı önizleme
 - [ ] Grok Build adaptörü (ücretsiz erişim doğrulanırsa)
 - [ ] Faz 4–8: dokümandaki sırayla

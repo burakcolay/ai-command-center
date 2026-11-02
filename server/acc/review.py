@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from acc import assistant
+from acc import assistant, card
 
 READ_ONLY = ["Read", "Glob", "Grep", "Bash"]  # Bash for `git diff` / running tests, sandboxed
 LARGE_FILES = 5
@@ -84,12 +84,19 @@ def wanted(independent: bool, diff: dict[str, Any]) -> bool:
     return len(files) >= LARGE_FILES or lines >= LARGE_LINES
 
 
-def prompt(request: str, diff: dict[str, Any], checks: list[dict[str, Any]]) -> str:
+def prompt(
+    request: str,
+    diff: dict[str, Any],
+    checks: list[dict[str, Any]],
+    card_text: str | None = None,
+) -> str:
     patch = diff.get("patch") or ""
     if len(patch) > PATCH_LIMIT:
         patch = patch[:PATCH_LIMIT] + "\n[… diff kısaltıldı; geri kalanını dosyalardan oku …]"
-    lines = [
-        f"KULLANICININ İSTEĞİ:\n{request}",
+    lines = [f"KULLANICININ İSTEĞİ:\n{request}"]
+    if card_text:  # also check the change against the project's agreed plan and contract
+        lines.append(f"PROJE KARTI (değişiklik buna uymalı):\n{card.brief(card_text)}")
+    lines += [
         "DEĞİŞEN DOSYALAR: " + ", ".join(f["path"] for f in diff.get("files") or []),
     ]
     if checks:

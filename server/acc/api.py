@@ -1,5 +1,6 @@
 import base64
 import binascii
+import contextlib
 import re
 import shutil
 import subprocess
@@ -13,6 +14,7 @@ from sqlalchemy import select
 
 from acc import (
     attachments,
+    card,
     checks,
     config,
     designs,
@@ -135,6 +137,39 @@ class ChecksConfig(BaseModel):
 
 class ChecksIn(BaseModel):
     config: ChecksConfig | None = None  # None = back to auto-detection
+
+
+@router.get("/projects/{project_id}/card")
+async def project_card(project_id: int):
+    """The Project Card: the newest version, even if it is still waiting to be merged."""
+    with session() as s:
+        p = s.get(Project, project_id)
+        if p is None:
+            raise HTTPException(404)
+        path = Path(p.path)
+        pending = s.scalar(
+            select(Task.worktree)
+            .where(
+                Task.project_id == project_id,
+                Task.kind == TaskKind.SESSION,
+                Task.status.not_in(sessions.OPEN),
+                Task.worktree.is_not(None),
+            )
+            .order_by(Task.id.desc())
+        )
+    places: list[tuple[Path, str]] = []
+    if pending:
+        with contextlib.suppress(gitops.GitError):
+            places.append((Path(pending) / (await gitops.repo_info(path)).rel, "pending"))
+    places.append((path, "merged"))
+    for folder, state in places:
+        if text := card.read(folder):
+            team = [
+                {"name": a.name, "tech": a.tech, "folder": a.folder, "builder": a.builder}
+                for a in card.team(text)
+            ]
+            return {"content": text, "state": state, "team": team}
+    return {"content": None, "state": None, "team": []}
 
 
 @router.get("/projects/{project_id}/checks")
@@ -289,7 +324,14 @@ async def post_message(chat_id: int, body: MessageIn):
             chat_id=chat_id,
             role="user",
             content=content,
-            meta={"attachments": body.attachments} if body.attachments else None,
+            meta=(
+                {
+                    "attachments": body.attachments,
+                    "files": [attachments.describe(a) for a in body.attachments],
+                }
+                if body.attachments
+                else None
+            ),
         )
         reply = Message(chat_id=chat_id, role="assistant", content="", status="streaming")
         s.add_all([user_msg, reply])
@@ -304,7 +346,7 @@ async def post_message(chat_id: int, body: MessageIn):
 
 class UploadIn(BaseModel):
     name: str = Field(default="görsel", max_length=200)
-    data: str = Field(max_length=14_000_000)  # base64; ~10 MB of image
+    data: str = Field(max_length=14_000_000)  # base64; ~10 MB image or 1 MB text
 
 
 @router.post("/uploads", status_code=201)
@@ -324,7 +366,10 @@ def get_upload(upload_id: str):
     path = attachments.upload_path(upload_id)
     if path is None:
         raise HTTPException(404)
-    return FileResponse(path)
+    headers = {"X-Content-Type-Options": "nosniff"}
+    if attachments.is_text(path):  # shown as plain text, never rendered as a page
+        return FileResponse(path, media_type="text/plain; charset=utf-8", headers=headers)
+    return FileResponse(path, headers=headers)
 
 
 @router.get("/designs/{message_id}/{n}.png")

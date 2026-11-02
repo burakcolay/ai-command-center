@@ -63,9 +63,29 @@ Sohbete yazmaya devam ettikçe değişiklikler aynı kopyada birikir.
 
 **Görsel ekleme:** Ataç butonu, yapıştırma (⌘V) veya sürükle-bırak ile ekran görüntüsü eklenebilir. Asistan görseli okur.
 
+**Hazır bir fikir ya da spec dosyasıyla başlamak:** Ataç butonuyla `.md` ya da `.txt` dosyanı ekle ve "bununla başlayalım" de. Asistan kod yazmadan önce projede bir **Proje Kartı** (`PROJE.md`) hazırlar:
+- amaç ve kapsam (MVP / sonra),
+- mimari ve her alan için en uygun teknoloji (gerekçesiyle),
+- ekip: hangi alanı kim yapar,
+- alanlar arası API sözleşmesi,
+- veri modeli,
+- kabul ölçütlü aşamalar.
+
+En fazla 3 kritik soru sorar ve onay ister; sen onaylamadan uygulama koduna başlamaz. Kart **Projeler → Kart**'tan okunabilir. Kararlar değiştikçe güncellenir.
+
+Onaydan sonra iş aşama aşama ilerler:
+1. Önce alanlar arası sözleşme sabitlenir.
+2. Her alanın işi o alanın uzmanına gider; bağımsız alanlar aynı anda çalışır.
+3. Testler yazılır.
+4. Kontroller çalışır ve bağımsız inceleme yapılır.
+
+Her aşamanın sonunda tek bir değişiklik kartı görürsün; "devam" deyince sonraki aşamaya geçilir.
+
 **Ekip:** Asistan tek başına çalışmak zorunda değil; sen model seçmezsin, iş bölümünü kendisi yapar:
-- **Claude (lider):** İsteği anlar, planlar, kodu yazar. Büyük işlerde kendi uzman alt ajanlarına paralel iş verir: **Araştırmacı** (alt soruları ayrı ayrı araştırır), **Tasarımcı** (her tasarımı ayrı çizer), **Test yazarı**, **İnceleyici**. Sohbette canlı olarak "Tasarımcı: …" gibi kimin ne yaptığı görünür.
-- **Codex (ikinci göz):** Claude projede bir değişiklik yapınca Codex bunu dosyalara dokunmadan inceler. Ciddi bir sorun bulursa Claude düzeltir, katılmadığı maddeyi gerekçesiyle reddeder. Bulgular ve düzeltme cevabın altında görünür. Claude'un kotası biterse işi Codex devralır.
+- **Claude (lider):** İsteği anlar, planlar, kartı yazar ve işi dağıtır. Genel uzmanları: **Araştırmacı**, **Tasarımcı**, **Test yazarı**, **İnceleyici**.
+- **Alan uzmanları:** Proje Kartı'ndaki her alan için Orbit kendiliğinden bir uzman kurar, ör. "Backend geliştirici (FastAPI, server/)" ya da "Frontend geliştirici (React, web/)". Her uzmanın talimatında kartın kendisi vardır; projeyi anlamadan, kartı ve kendi klasöründeki kodu okumadan çalışmaz ve yalnızca kendi klasörüne yazar. Kodu yazan uzmanlar Dengeli kalitede daha hızlı ve kotayı az harcayan Sonnet'le çalışır; mimariyi kuran lider senin seçtiğin modelde kalır.
+- **Codex (ikinci geliştirici):** Kartta "Yapan: Codex" olan alanların kodunu Codex yazar, Claude'un uzmanlarıyla **aynı anda**. Böylece iki abonelik birlikte çalışır; Codex yalnızca yedekte beklemez. Lider, Codex kuruluyken bağımsız alanlardan en az birini ona verir. Codex'in kotası dolarsa o alanı Claude'un uzmanı devralır.
+- **Bağımsız inceleme:** Değişikliği, onu yazmayan bir model inceler: Claude yazdıysa Codex ya da Gemini, Codex de yazdıysa Gemini. Ciddi bir sorun bulunursa Claude düzeltir, katılmadığı maddeyi gerekçesiyle reddeder. Bulgular cevabın altında görünür.
 - **Gemini (ikinci göz):** Google hesabınla (AI Plus/Pro) çalışır. Codex yoksa Claude'un değişikliklerini o inceler; uzun sohbet özetlerini de o çıkarır, böylece Claude'un kotası harcanmaz. Kod yazmaz.
 - **Ollama (yerel):** Varsa uzun sohbetleri ücretsiz özetler.
 
@@ -124,6 +144,7 @@ Asistan projede bir değişiklik yapınca ORBIT projenizin test, lint ve tip kon
 ## Güvenlik
 
 - **Ağ:** Sunucu yalnızca `127.0.0.1`'de dinler. Başka sitelerden gelen istekler (CSRF) ve sahte host adları (DNS rebinding) reddedilir.
+- **Kısıtlı mod:** Claude Code destekliyorsa `--restricted` ile çalışır. Dosya araçları yalnızca çalışma kopyasına ve Orbit'in verdiği klasörlere erişir; `.git` ve ayar dosyalarına yazamaz, bu yüzden git kancası yerleştiremez. Ayar dosyaları ve senin kendi MCP sunucuların yüklenmez.
 - **Gizli dosyalar:** Asistan `.env`, `*.pem`, `*.key`, `*.p8` gibi dosyaları okuyamaz. Çalıştırdığı komutlar sandbox içindedir; `~/.ssh`, `~/.aws`, `~/.claude` gibi klasörleri ve ORBIT'in kendi veritabanını göremez, projenin kopyası dışına yazamaz.
 - **Repo ayarları:** Repo içindeki `.claude/settings.json` dikkate alınmaz; bir repo kendi hook'larıyla komut çalıştıramaz.
 - **Loglar:** Token, anahtar ve şifre benzeri değerler kaydedilmeden önce `[gizli]` olarak maskelenir. `data/` klasörü yalnızca sizin kullanıcınız tarafından okunabilir.
@@ -172,6 +193,8 @@ server/acc/       FastAPI backend
   adapters/       Model sağlayıcıları: Claude Code, Codex, Gemini (Antigravity), Ollama
   assistant.py    Lider asistanın talimatı, araçları ve alt ajanları
   review.py       Bağımsız inceleme ve düzeltme turu
+  card.py         Proje Kartı (PROJE.md) ve ekip tablosu
+  mcp_codex.py    Claude'dan Codex'e iş veren köprü (MCP)
   chat.py         Sohbet turu: model seçimi, oturum, çıktılar
   sessions.py     Sohbetteki değişiklikler: kopya, commit, kontroller, birleştirme
   github.py       Değişiklikleri GitHub'a PR olarak gönderme

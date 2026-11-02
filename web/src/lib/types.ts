@@ -79,6 +79,8 @@ export interface Message {
   adapter_id: string | null;
   meta: {
     attachments?: string[];
+    /** What each attachment is (image, text file such as a spec, or a picked design). */
+    files?: { id: string; kind: "image" | "text" | "design"; name: string }[];
     /** Designs the assistant drew in this turn. */
     variants?: DesignVariant[];
     /** Reports it wrote, saved as markdown next to project memory. */
@@ -159,6 +161,12 @@ export interface TaskEvent {
   kind: "text" | "tool" | "log" | "usage" | "error";
   data: Record<string, unknown>;
   created_at: string;
+}
+
+export interface ProjectCard {
+  content: string | null;
+  state: "pending" | "merged" | null;
+  team: { name: string; tech: string; folder: string; builder: "claude" | "codex" }[];
 }
 
 export interface GitHubStatus {

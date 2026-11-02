@@ -1,5 +1,6 @@
-import { BookMarked, Folder, Plus, ShieldCheck, X } from "lucide-react";
+import { BookMarked, FileText, Folder, Plus, ShieldCheck, X } from "lucide-react";
 import { useState } from "react";
+import { CardViewer } from "../components/CardViewer";
 import { ChecksEditor } from "../components/ChecksEditor";
 import { MemoryEditor } from "../components/MemoryEditor";
 import { api } from "../lib/api";
@@ -19,6 +20,7 @@ export function ProjectsView({ projects, onChanged, onOpen, onError }: Props) {
   const [path, setPath] = useState("");
   const [memoryFor, setMemoryFor] = useState<Project | null>(null);
   const [checksFor, setChecksFor] = useState<Project | null>(null);
+  const [cardFor, setCardFor] = useState<Project | null>(null);
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,6 +111,13 @@ export function ProjectsView({ projects, onChanged, onOpen, onError }: Props) {
                 <div className="truncate font-mono text-[11px] text-faint">{p.path}</div>
               </button>
               <button
+                onClick={() => setCardFor(p)}
+                className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2 py-1 font-mono text-[10.5px] text-dim hover:border-white/30 hover:text-fg"
+                title="Proje Kartı: amaç, mimari, ekip ve sözleşme; her ajan bunu okuyarak çalışır"
+              >
+                <FileText size={11} /> Kart
+              </button>
+              <button
                 onClick={() => setChecksFor(p)}
                 className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2 py-1 font-mono text-[10.5px] text-dim hover:border-white/30 hover:text-fg"
                 title="Kalite kontrolleri: incelemeden önce sandbox'ta çalışan test ve lint komutları"
@@ -133,6 +142,7 @@ export function ProjectsView({ projects, onChanged, onOpen, onError }: Props) {
           ))}
         </div>
       )}
+      {cardFor && <CardViewer project={cardFor} onClose={() => setCardFor(null)} onError={onError} />}
       {checksFor && (
         <ChecksEditor project={checksFor} onClose={() => setChecksFor(null)} onError={onError} />
       )}

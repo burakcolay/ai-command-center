@@ -6,6 +6,7 @@ import type {
   ChecksConfig,
   ChecksInfo,
   GitHubStatus,
+  ProjectCard,
   ModelInfo,
   Project,
   SystemInfo,
@@ -47,6 +48,7 @@ export const api = {
     post<Project>("/projects", { name, path: path || null }),
   removeProject: (id: number) => req<void>(`/projects/${id}`, { method: "DELETE" }),
   memory: (id: number) => req<{ path: string; content: string }>(`/projects/${id}/memory`),
+  card: (id: number) => req<ProjectCard>(`/projects/${id}/card`),
   saveMemory: (id: number, content: string) =>
     req<{ path: string; content: string }>(`/projects/${id}/memory`, {
       method: "PUT",

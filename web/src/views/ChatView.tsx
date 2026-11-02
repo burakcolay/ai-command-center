@@ -76,7 +76,7 @@ export function ChatView(p: Props) {
   const applyDesign = (v: DesignVariant) => {
     if (p.projectId === null) p.onError("Projeye uygulamak için aşağıdan bir proje seç.");
     ask(`${v.n}. tasarımı (${v.title}) projeye uygula. Ekteki görseli ve HTML'ini referans al.`, [
-      { id: v.attachment, name: v.title, preview: attachmentUrl(v.attachment) },
+      { id: v.attachment, name: v.title, kind: "design", preview: attachmentUrl(v.attachment) },
     ]);
   };
 
@@ -173,19 +173,27 @@ export function ChatView(p: Props) {
 }
 
 function UserMessage({ message: m }: { message: Message }) {
-  const files = m.meta?.attachments ?? [];
+  // Newer messages say what each attachment is; older ones only had images.
+  const files =
+    m.meta?.files ?? (m.meta?.attachments ?? []).map((id) => ({ id, kind: "image", name: "ek" }));
   return (
     <div className="flex justify-end animate-rise">
       <div className="flex max-w-[85%] flex-col items-end gap-2">
         {files.length > 0 && (
           <div className="flex flex-wrap justify-end gap-2">
-            {files.map((id) => (
-              <a key={id} href={attachmentUrl(id)} target="_blank" rel="noreferrer">
-                <img
-                  src={attachmentUrl(id)}
-                  alt="ek"
-                  className="max-h-40 rounded-xl border border-line-strong object-cover"
-                />
+            {files.map((f) => (
+              <a key={f.id} href={attachmentUrl(f.id)} target="_blank" rel="noreferrer">
+                {f.kind === "text" ? (
+                  <span className="flex items-center gap-2 rounded-xl border border-line-strong px-3 py-2 text-[12.5px] text-dim hover:text-fg">
+                    <FileText size={14} /> {f.name}
+                  </span>
+                ) : (
+                  <img
+                    src={attachmentUrl(f.id)}
+                    alt={f.name}
+                    className="max-h-40 rounded-xl border border-line-strong object-cover"
+                  />
+                )}
               </a>
             ))}
           </div>
@@ -342,10 +350,21 @@ const AGENT_LABEL: Record<string, string> = {
   "test-yazari": "Test yazarı",
   inceleyici: "İnceleyici",
 };
+const CODEX_TOOL = "mcp__orbit__codex_gorev";
+
+/** "backend-gelistirici" → "Backend geliştirici", "backend-codex" → "Backend (Codex)". */
+function agentLabel(name: string): string {
+  if (AGENT_LABEL[name]) return AGENT_LABEL[name];
+  const cap = (s: string) => s.charAt(0).toLocaleUpperCase("tr") + s.slice(1).replace(/-/g, " ");
+  if (name.endsWith("-gelistirici")) return `${cap(name.slice(0, -12))} geliştirici`;
+  if (name.endsWith("-codex")) return `${cap(name.slice(0, -6))} (Codex)`;
+  return name;
+}
 
 /** One live line: who is doing what ("Araştırmacı: rakip fiyatları", "Codex: ▸ Read app.ts"). */
 export function activityText(tool: { name: string; input?: unknown; agent?: string }): string {
-  const who = tool.agent ? `${AGENT_LABEL[tool.agent] ?? tool.agent}: ` : "";
+  const who = tool.agent ? `${agentLabel(tool.agent)}: ` : "";
+  if (tool.name === CODEX_TOOL) return `${who}Codex'e görev verdi, Codex çalışıyor`;
   if (tool.name === "Agent" || tool.name === "Task") {
     const i = (tool.input ?? {}) as { description?: string };
     return `${who}${i.description ?? "görev aldı"}`;

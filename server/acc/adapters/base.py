@@ -109,6 +109,7 @@ class RunRequest:
     session_id: str | None = None  # start a resumable conversation with this id
     resume: str | None = None  # continue an earlier conversation
     agents: dict[str, Any] | None = None  # specialist subagents the model may delegate to
+    mcp_servers: dict[str, Any] | None = None  # MCP servers for this run only (e.g. Codex bridge)
 
 
 EventKind = Literal["text", "delta", "tool", "log", "usage", "result", "error"]

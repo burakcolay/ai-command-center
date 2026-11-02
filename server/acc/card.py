@@ -1,0 +1,111 @@
+"""The Project Card (PROJE.md): the one document every agent reads before touching a project.
+
+The lead assistant writes it from the user's idea or spec, the user approves it, and from
+then on it is the shared understanding: goals, scope, architecture, the contract between
+areas, and the team. Orbit reads its "Ekip" table to build one specialist per area (which
+technology, which folder, built by Claude or Codex) and puts the card into every
+specialist's instructions, so none of them starts without knowing the project.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+FILE = "PROJE.md"
+LEAD_LIMIT = 16_000  # chars of the card in the lead's prompt
+BRIEF_LIMIT = 8_000  # chars of the card inside each specialist's instructions
+
+_TEAM_HEADING = re.compile(r"^#{2,3}\s*ek[iİı]p\b", re.I)
+_TR = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+
+
+@dataclass(frozen=True)
+class Area:
+    name: str  # e.g. "Backend"
+    tech: str  # e.g. "FastAPI (Python 3.12)"
+    folder: str  # e.g. "server/"
+    builder: str  # "claude" or "codex"
+
+    @property
+    def slug(self) -> str:
+        s = re.sub(r"[^a-z0-9]+", "-", self.name.translate(_TR).lower()).strip("-")
+        return s or "alan"
+
+
+def read(folder: Path | None) -> str | None:
+    if folder is None:
+        return None
+    path = folder / FILE
+    if not path.is_file():
+        return None
+    text = path.read_text(encoding="utf-8", errors="replace").strip()
+    return text or None
+
+
+def _cells(line: str) -> list[str]:
+    return [c.strip().strip("`").strip() for c in line.strip().strip("|").split("|")]
+
+
+def team(text: str | None) -> list[Area]:
+    """Rows of the "## Ekip" table: | Alan | Teknoloji | Klasör | Yapan |"""
+    if not text:
+        return []
+    lines = text.splitlines()
+    start = next((i for i, ln in enumerate(lines) if _TEAM_HEADING.match(ln.strip())), None)
+    if start is None:
+        return []
+    rows = []
+    for ln in lines[start + 1 :]:
+        s = ln.strip()
+        if s.startswith("#"):
+            break
+        if s.startswith("|"):
+            rows.append(_cells(s))
+        elif rows and s:
+            break  # the table ended
+    if len(rows) < 2:
+        return []
+    header = [h.translate(_TR).lower() for h in rows[0]]
+
+    def col(*names: str) -> int | None:
+        return next((i for i, h in enumerate(header) if any(n in h for n in names)), None)
+
+    i_area, i_tech = col("alan"), col("teknoloji", "dil")
+    i_folder, i_builder = col("klasor"), col("yapan", "model")
+    if i_area is None:
+        return []
+    areas, seen = [], set()
+    for row in rows[1:]:
+        if all(set(c) <= set("-: ") for c in row):  # the |---|---| line
+            continue
+
+        def get(i: int | None, row: list[str] = row) -> str:
+            return row[i] if i is not None and i < len(row) else ""
+
+        builder = "codex" if "codex" in get(i_builder).lower() else "claude"
+        area = Area(get(i_area), get(i_tech), get(i_folder), builder)
+        if area.name and area.slug not in seen:
+            seen.add(area.slug)
+            areas.append(area)
+    return areas[:8]
+
+
+def _trim(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"\n[… kartın devamı {FILE} dosyasında; Read ile oku …]"
+
+
+def lead_block(text: str | None) -> str:
+    if not text:
+        return ""
+    return (
+        f"PROJE KARTI ({FILE}: projenin ortak anlayışı; her işte buna uy, karar değişirse "
+        f"güncelle):\n{_trim(text, LEAD_LIMIT)}\n\n"
+    )
+
+
+def brief(text: str) -> str:
+    return _trim(text, BRIEF_LIMIT)

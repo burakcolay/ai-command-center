@@ -59,7 +59,9 @@ def test_attachment_reaches_the_model(client, rec):
         json={"content": "Bu ekranı yorumla", "attachments": [upload_id]},
     )
     assert r.status_code == 201
-    assert r.json()["messages"][0]["meta"] == {"attachments": [upload_id]}
+    meta = r.json()["messages"][0]["meta"]
+    assert meta["attachments"] == [upload_id]
+    assert meta["files"] == [{"id": upload_id, "kind": "image", "name": "ekran.png"}]
     wait_msg(client, chat_id, r.json()["messages"][1]["id"])
     turn(client, chat_id, "Peki ya renkler?")
     first = rec.requests[0]

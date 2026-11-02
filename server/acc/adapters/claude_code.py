@@ -5,6 +5,9 @@ Verified against Claude Code 2.1.x stream-json output:
   - rate_limit_event carries real 5-hour / 7-day utilization and overage flags.
   - result carries `structured_output` when --json-schema is given.
   - total_cost_usd is a notional figure on subscriptions and is NOT shown as spend.
+  - --restricted (2.1.316) confines file tools to the working folder and --add-dir, ignores
+    all settings files and refuses writes to .git / settings without a person; verified:
+    reading outside the folder and writing .git/hooks/pre-commit are denied.
   - Subagents (Agent tool) run in the background in 2.1.3xx: the lead's turn ends, each
     finished subagent starts another turn, and the process exits when all are done — with one
     result per turn. Only the last result is the answer.
@@ -71,6 +74,7 @@ class ClaudeCodeAdapter(ModelAdapter):
         self._procs: dict[str, asyncio.subprocess.Process] = {}
         self._last_usage: Usage | None = None
         self._subagents: dict[str, str] = {}  # Agent tool_use id -> subagent name
+        self._restricted = False  # set by health_check when the CLI supports --restricted
 
     async def _exec(self, *args: str, timeout: float = 20) -> tuple[int, str]:
         proc = await asyncio.create_subprocess_exec(
@@ -107,6 +111,11 @@ class ClaudeCodeAdapter(ModelAdapter):
                 f"Abonelik dışı kimlik doğrulama algılandı ({method}/{provider}). "
                 "Ücretli API'ye geçmemek için kullanım engellendi.",
             )
+        try:
+            _, helptext = await self._exec("--help")
+            self._restricted = "--restricted" in helptext
+        except (TimeoutError, OSError):
+            self._restricted = False
         if (resets := self._blocked_until()) is not None:
             return Health(
                 ModelState.COOLDOWN,
@@ -141,18 +150,29 @@ class ClaudeCodeAdapter(ModelAdapter):
             args += ["--session-id", req.session_id]
         else:
             args += ["--no-session-persistence"]
-        # Project-level .claude/settings.json inside a repo is untrusted (it can define hooks
-        # that run commands). Only the user's own settings plus ours are loaded.
-        args += ["--setting-sources", "user"]
+        if self._restricted:
+            # Restricted mode: file tools confined to the working folder (+ --add-dir), no
+            # settings files at all (a repo's .claude/settings.json could define hooks), and
+            # no writes to git or tool-configuration files (e.g. .git/hooks) without a person.
+            args += ["--restricted"]
+        else:
+            # Older CLI: repo settings are untrusted; only the user's own settings plus ours.
+            args += ["--setting-sources", "user"]
         # Secret-file deny rules always apply; agent settings (e.g. sandbox) are added on top.
         args += [
             "--settings",
             json.dumps({**security.claude_base_settings(), **(req.settings or {})}),
         ]
         if req.tools is not None:
-            args += ["--tools", ",".join(req.tools)]
+            # --tools picks built-in tools; MCP tools (mcp__server__tool) are only allowed.
+            builtin = [t for t in req.tools if not t.startswith("mcp__")]
+            args += ["--tools", ",".join(builtin)]
             if req.tools:
                 args += ["--allowedTools", ",".join(req.tools)]
+        # Only the MCP servers Orbit passes for this run; the user's own are never loaded.
+        args += ["--strict-mcp-config"]
+        if req.mcp_servers:
+            args += ["--mcp-config", json.dumps(req.mcp_servers)]
         if req.permission_mode:
             args += ["--permission-mode", req.permission_mode]
         if req.json_schema:
@@ -186,7 +206,8 @@ class ClaudeCodeAdapter(ModelAdapter):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(req.cwd) if req.cwd else None,
-            env=sanitized_env(),
+            # A Codex task through the bridge can take a long time; don't let it time out.
+            env={**sanitized_env(), **({"MCP_TOOL_TIMEOUT": "1800000"} if req.mcp_servers else {})},
             limit=16 * 1024 * 1024,
         )
         self._procs[run_id] = proc

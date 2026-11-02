@@ -30,6 +30,7 @@ JUNK = [
     ".DS_Store",
     ".coverage",
     ".orbit-cache",
+    ".cc-writes",  # Claude Code's own bookkeeping folder inside the working directory
 ]
 WITHOUT_JUNK = [
     "--",

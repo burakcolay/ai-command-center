@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from acc import (
     assistant,
     attachments,
+    card,
     config,
     designs,
     memory,
@@ -34,11 +35,12 @@ from acc import (
     sessions,
 )
 from acc.adapters import Registry
-from acc.adapters.base import AdapterError, QuotaExceeded, RunRequest, SessionLost
+from acc.adapters.base import AdapterError, ModelState, QuotaExceeded, RunRequest, SessionLost
 from acc.db import session
 from acc.events import broker
 from acc.gitops import GitError
 from acc.gitops import discard as discard_uncommitted
+from acc.mcp_codex import FULL_NAME as CODEX_TOOL
 from acc.models import Chat, Message, Project, Task
 from acc.routing import Router
 
@@ -125,6 +127,7 @@ class ChatService:
         self.router = Router(registry)
         self._runs: dict[int, tuple[str, str]] = {}  # message_id -> (adapter_id, run_id)
         self._cancelling: set[int] = set()
+        self._codex_wrote: set[int] = set()  # turns in which Codex built something via the bridge
         self._jobs: set[asyncio.Task[None]] = set()
 
     def _spawn(self, coro) -> None:
@@ -259,10 +262,15 @@ class ChatService:
         out_dir = config.DATA_DIR / "outputs" / str(message_id)
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        # The Project Card, if the project has one: the lead and every specialist work from it.
+        card_text = card.read(cwd) if project_path and not local else None
         if adapter.info.id in TEAM_ADAPTERS and not local:
-            lead_tools, lead_system, team = assistant.setup(tools)
+            # Also when there is no card yet: the lead must know Codex is there while writing it.
+            codex = await self._codex_ready() if ws else False
+            plan = assistant.setup(tools, card_text, codex, cwd)
+            lead_tools, lead_system, team, mcp = plan.tools, plan.system, plan.agents, plan.mcp
         else:
-            lead_tools, lead_system, team = tools, assistant.SYSTEM, None
+            lead_tools, lead_system, team, mcp = tools, assistant.SYSTEM, None, None
 
         def build(with_history: bool) -> str:
             parts = [BACKUP_NOTE.format(name=adapter.info.name) if local else note]
@@ -270,6 +278,7 @@ class ChatService:
                 where = f"\nÇALIŞMA KOPYASI: {cwd}" if ws else ""
                 parts.append(f"PROJE: {project_name} ({project_path}){where}\n\n")
             parts.append(memory.prompt_block(project_name))
+            parts.append(card.lead_block(card_text))
             if ws:
                 parts.append(_checks_block(sessions.checks_config(ws.task_id, ws.cwd)))
                 parts.append(sessions.failed_checks_block(ws.task_id))
@@ -299,6 +308,7 @@ class ChatService:
                 system_prompt=lead_system,
                 tools=lead_tools,
                 agents=team,
+                mcp_servers=mcp,
                 permission_mode="dontAsk",
                 settings=assistant.settings(tools),
                 stream_text=True,
@@ -362,6 +372,7 @@ class ChatService:
         finally:
             self._runs.pop(message_id, None)
             self._cancelling.discard(message_id)
+            self._codex_wrote.discard(message_id)
 
     async def _run(self, message_id: int, adapter, req: RunRequest, buf: list[str]) -> str:
         run_id = uuid.uuid4().hex
@@ -373,6 +384,8 @@ class ChatService:
                     {"type": "message_delta", "message_id": message_id, "text": ev.data["text"]}
                 )
             elif ev.kind == "tool":
+                if ev.data.get("name") == CODEX_TOOL:
+                    self._codex_wrote.add(message_id)
                 tool = security.redact_data(ev.data)
                 broker.publish({"type": "message_activity", "message_id": message_id, "tool": tool})
             elif ev.kind == "result":
@@ -380,6 +393,11 @@ class ChatService:
             elif ev.kind == "error":
                 raise AdapterError(ev.data.get("text") or "Bilinmeyen hata")
         raise AdapterError("Model yanıtı tamamlamadan durdu.")
+
+    async def _codex_ready(self) -> bool:
+        if self.registry.get("codex") is None:
+            return False
+        return (await self.registry.health("codex")).state == ModelState.AVAILABLE
 
     async def _result(self, message_id: int, adapter, req: RunRequest, who: str) -> dict:
         """Run to completion and return the result event (e.g. structured output)."""
@@ -410,11 +428,13 @@ class ChatService:
         """Another model reviews the change; the lead fixes what is serious (one round)."""
         if assistant.quality() == "economy":
             return text, None
-        avoid = frozenset({author.info.id})
+        # The reviewer is someone who didn't write it: neither the lead nor Codex if it built.
+        authors = {author.info.id} | ({"codex"} if message_id in self._codex_wrote else set())
+        avoid = frozenset(authors)
         reviewer = (await self.router.pick("review", needs_tools=True, avoid=avoid)).adapter
         if reviewer is None:
             return text, None
-        independent = reviewer.info.id != author.info.id
+        independent = reviewer.info.id not in authors
         diff = await sessions.diff(ws.task_id)
         if not review.wanted(independent, diff):
             return text, None
@@ -424,7 +444,7 @@ class ChatService:
         self._activity(message_id, name, "değişiklikleri inceliyor")
         sessions.log(ws.task_id, f"Bağımsız inceleme: {name}")
         req = RunRequest(
-            prompt=review.prompt(question, diff, results),
+            prompt=review.prompt(question, diff, results, card.read(ws.cwd)),
             cwd=ws.cwd,
             system_prompt=review.SYSTEM,
             json_schema=review.SCHEMA,
