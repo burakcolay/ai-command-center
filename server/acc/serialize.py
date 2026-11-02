@@ -87,6 +87,7 @@ def task(t: Task) -> dict[str, Any]:
         "branch": t.branch,
         "base_branch": t.base_branch,
         "merged_commit": t.merged_commit,
+        "pr_url": t.pr_url,
         "checks": t.checks,
         "resume_at": _ts(t.resume_at),
         "created_at": _ts(t.created_at),

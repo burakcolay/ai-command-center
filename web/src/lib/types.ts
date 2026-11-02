@@ -8,7 +8,7 @@ export type TaskStatus =
   | "failed"
   | "cancelled";
 
-export type Decision = "approve" | "reject" | "undo_last" | "rerun_checks";
+export type Decision = "approve" | "reject" | "undo_last" | "rerun_checks" | "open_pr";
 
 export interface CheckCommand {
   name: string;
@@ -138,6 +138,7 @@ export interface Task {
   branch: string | null;
   base_branch: string | null;
   merged_commit: string | null;
+  pr_url: string | null;
   checks: CheckResult[] | null;
   resume_at: string | null;
   steps: TaskStepState[];
@@ -151,6 +152,12 @@ export interface TaskEvent {
   kind: "text" | "tool" | "log" | "usage" | "error";
   data: Record<string, unknown>;
   created_at: string;
+}
+
+export interface GitHubStatus {
+  repo: string | null;
+  ready: boolean;
+  reason: string;
 }
 
 export interface Approval {

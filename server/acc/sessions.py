@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 
-from acc import checks, config, gitops, memory, security, serialize
+from acc import checks, config, github, gitops, memory, security, serialize
 from acc.db import session
 from acc.events import broker
 from acc.gitops import GitError
@@ -262,6 +262,8 @@ async def decide(task_id: int, decision: str) -> dict[str, Any]:
         _resolve(task_id, ApprovalStatus.REJECTED)
         payload = _update(task_id, status=TaskStatus.CANCELLED)
         log(task_id, "Değişiklikler atıldı.")
+        if payload.get("pr_url"):
+            log(task_id, f"GitHub'daki PR açık kaldı; kapatmak için: {payload['pr_url']}")
         await cleanup(task_id, merged=False)
         return payload
 
@@ -295,7 +297,58 @@ async def decide(task_id: int, decision: str) -> dict[str, Any]:
         await to_review(task_id)
         return _publish(task_id)
 
+    if decision == "open_pr":
+        return await _open_pr(task_id, ws)
+
     raise InvalidTransition(f"Bilinmeyen karar: {decision}")
+
+
+async def github_status(task_id: int) -> dict[str, Any]:
+    ws = await _workspace_of(task_id)
+    st = await github.status(ws.root)
+    return {"repo": st.repo, "ready": st.ready, "reason": st.reason}
+
+
+def _pr_text(titles: list[str], results: list[dict[str, Any]]) -> tuple[str, str]:
+    first = titles[0].strip().splitlines()[0]
+    title = first[:72] + (f" (+{len(titles) - 1})" if len(titles) > 1 else "")
+    body = ["Orbit sohbetinden hazırlanan değişiklikler.", "", "## İstekler"]
+    body += [f"- {t.strip().splitlines()[0][:200]}" for t in titles]
+    if results:
+        mark = {"passed": "✓", "failed": "✗"}
+        body += ["", "## Kalite kontrolleri (sandbox'ta ölçüldü)"]
+        body += [f"- {mark.get(r.get('status'), '–')} {r['name']}" for r in results]
+    return title, "\n".join(body)
+
+
+async def _open_pr(task_id: int, ws: Workspace) -> dict[str, Any]:
+    """Push Orbit's branch and open (or update) a pull request. Runs only on the user's click."""
+    with session() as s:
+        t = s.get(Task, task_id)
+        branch, base, pr_url, results = t.branch, t.base_branch, t.pr_url, t.checks or []
+        titles = s.scalars(
+            select(TaskStep.title)
+            .where(TaskStep.task_id == task_id, TaskStep.status == StepStatus.DONE)
+            .order_by(TaskStep.seq)
+        ).all()
+    if not titles:
+        raise InvalidTransition("GitHub'a gönderilecek değişiklik yok.")
+    st = await github.status(ws.root)
+    if not st.ready:
+        raise InvalidTransition(st.reason)
+    try:
+        await github.push(ws.root, branch)
+        if pr_url is None:
+            title, body = _pr_text(list(titles), results)
+            pr_url = await github.create_pr(ws.root, st.repo, branch, base, title, body)
+            log(task_id, f"GitHub'da PR açıldı: {pr_url}")
+        else:
+            log(task_id, f"PR güncellendi: {pr_url}")
+    except github.GitHubError as e:
+        raise InvalidTransition(str(e)) from None
+    with session() as s:
+        s.add(AuditLog(actor="user", action="session.pr", target=f"task:{task_id} {pr_url}"))
+    return _update(task_id, pr_url=pr_url)
 
 
 def _resolve(task_id: int, status: ApprovalStatus) -> None:

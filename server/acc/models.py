@@ -97,6 +97,8 @@ class Task(Base):
     base_commit: Mapped[str | None] = mapped_column(String(64))
     worktree: Mapped[str | None] = mapped_column(Text)
     merged_commit: Mapped[str | None] = mapped_column(String(64))
+    # Pull request opened on GitHub for this branch (the user pressed "PR aç").
+    pr_url: Mapped[str | None] = mapped_column(Text)
     # Results of the last quality-gate run (list of {name, command, status, exit_code, ...}).
     checks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
     # Paused for subscription quota: resumes automatically at this time.

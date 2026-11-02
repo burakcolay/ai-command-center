@@ -355,7 +355,7 @@ async def resume_message(message_id: int):
 
 
 class DecisionIn(BaseModel):
-    decision: Literal["approve", "reject", "undo_last", "rerun_checks"]
+    decision: Literal["approve", "reject", "undo_last", "rerun_checks", "open_pr"]
 
 
 @router.get("/tasks/{task_id}/events")
@@ -375,6 +375,15 @@ async def decide(task_id: int, body: DecisionIn):
         raise HTTPException(404) from None
     except InvalidTransition as e:
         raise HTTPException(409, str(e)) from None
+
+
+@router.get("/tasks/{task_id}/github")
+async def task_github(task_id: int):
+    """Can this chat's changes go to GitHub as a pull request?"""
+    try:
+        return await sessions.github_status(task_id)
+    except (LookupError, AttributeError, gitops.GitError):
+        raise HTTPException(404) from None
 
 
 @router.get("/tasks/{task_id}/diff")

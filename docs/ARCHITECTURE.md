@@ -168,7 +168,8 @@ Kullanıcı mod seçmez. Her mesaj bir **turdur** (`ChatService._reply`). Asista
 
 - **Kopya:** Proje seçili sohbetin ilk turunda bir oturum (task) ve worktree açılır. Sadece konuşulan sohbette değişiklik oluşmaz ve kart görünmez.
 - **Commit:** Dosya değiştiren her tur bir commit ve bir adım (`task_steps`, `kind = "edit"`) olur. Ardından kontroller çalışır ve birleştirme onayı açılır.
-- **Kararlar:** `approve` (birleştir), `undo_last` (son turu `reset --hard <commit>~1` ile geri al), `reject` (hepsini at), `rerun_checks`. Asistan çalışırken karar verilemez.
+- **Kararlar:** `approve` (birleştir), `undo_last` (son turu `reset --hard <commit>~1` ile geri al), `reject` (hepsini at), `rerun_checks`, `open_pr`. Asistan çalışırken karar verilemez.
+- **GitHub PR** (`github.py`): `open_pr`, `orbit/task-N` branch'ini `--force-with-lease` ile push eder (geri alma branch'i yeniden yazdığı için) ve ilk seferde `gh pr create` ile PR açar; `tasks.pr_url` saklanır, sonraki gönderimler yalnızca push eder. Remote, insteadOf uygulanmamış `remote.origin.url`'den okunur. Git ve gh hiçbir zaman soru sormaz (`GIT_TERMINAL_PROMPT=0`, `GH_PROMPT_DISABLED=1`, SSH `BatchMode`) ve 120 sn'de zaman aşımına uğrar. Kimlik bilgisi kullanıcının git/gh ayarlarındadır; Orbit token saklamaz.
 - **Ömür:** Birleştirme veya "Hepsini at" ile kapanır; sonraki değişiklik yeni bir oturum açar. Değişiklik içermeyen oturum, proje değiştirilince sessizce kapanır. Sohbet ya da proje silinince kopya ve branch temizlenir; kullanıcının projesine dokunulmaz.
 - **Kurulum önbelleği:** Kontrollerin kurulum adımı, komut ve bağımlılık dosyaları değişmedikçe aynı worktree'de bir kez çalışır (`.orbit-cache/setup.done`).
 
@@ -223,6 +224,7 @@ waiting_approval ──reject──► cancelled (worktree + branch silinir)
 - [x] **Güvenlik sertleştirmesi:** CSRF, gizli dosya erişimi, log maskeleme, özel veri klasörü, temiz alt süreç ortamı
 - [x] **Görsel ekleme + tasarım varyantları**
 - [x] **Model yönlendirici** (kota baskısı, sağlık, elle sabitleme)
-- [ ] **Sıradaki adaylar:** GitHub entegrasyonu (branch, PR hazırlama; push/merge onaylı); iOS simülatör ekran görüntüsü; web projeleri için görsel önizleme
+- [x] **GitHub PR:** sohbetin değişikliklerini tek tıkla PR olarak gönderme ve güncelleme
+- [ ] **Sıradaki adaylar:** iOS simülatör ekran görüntüsü; web projeleri için görsel önizleme
 - [ ] Grok Build adaptörü (ücretsiz erişim doğrulanırsa)
 - [ ] Faz 4–8: dokümandaki sırayla

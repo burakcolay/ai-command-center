@@ -1,8 +1,8 @@
-import { ChevronRight, GitBranch, GitMerge, Undo2 } from "lucide-react";
+import { ArrowUpRight, ChevronRight, GitBranch, GitMerge, GitPullRequest, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { toolTarget } from "../lib/format";
-import type { Decision, Task, TaskEvent, TaskStepState } from "../lib/types";
+import type { Decision, GitHubStatus, Task, TaskEvent, TaskStepState } from "../lib/types";
 import { ChecksPanel } from "./ChecksPanel";
 import { DiffView } from "./DiffView";
 import { StatusDot } from "./StatusDot";
@@ -30,6 +30,13 @@ export function ChangesCard({ task, events, onLoadEvents, onAsk, onError }: Prop
   useEffect(() => {
     if (logOpen && events === undefined) onLoadEvents(task.id);
   }, [logOpen, events, task.id, onLoadEvents]);
+
+  // Only projects on GitHub get the pull-request button.
+  const [github, setGithub] = useState<GitHubStatus | null>(null);
+  useEffect(() => {
+    if (!review) return;
+    api.github(task.id).then(setGithub).catch(() => setGithub(null));
+  }, [review, task.id]);
 
   const decide = async (d: Decision) => {
     setBusy(true);
@@ -103,11 +110,28 @@ export function ChangesCard({ task, events, onLoadEvents, onAsk, onError }: Prop
           </div>
         )}
 
+        {task.pr_url && (
+          <a
+            href={task.pr_url}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 inline-flex items-center gap-1.5 font-mono text-[11px] text-dim hover:text-fg"
+          >
+            <GitPullRequest size={12} />
+            GitHub'da PR #{task.pr_url.split("/").pop()}
+            <ArrowUpRight size={11} />
+          </a>
+        )}
+
         {task.status === "completed" && task.merged_commit && (
           <p className="mt-3 flex items-center gap-2 font-mono text-[11px] text-dim">
             <GitMerge size={12} />
             {task.base_branch} branch'ine birleştirildi · {task.merged_commit.slice(0, 8)}
           </p>
+        )}
+
+        {review && github?.repo && !github.ready && (
+          <p className="mt-3 font-mono text-[10.5px] text-faint">PR için: {github.reason}</p>
         )}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -121,6 +145,21 @@ export function ChangesCard({ task, events, onLoadEvents, onAsk, onError }: Prop
                   <Undo2 size={13} /> Son değişikliği geri al
                 </span>
               </Btn>
+              {github?.repo && (
+                <Btn
+                  disabled={busy || !canUndo || !github.ready}
+                  onClick={() => void decide("open_pr")}
+                  title={
+                    github.ready
+                      ? `Değişiklikleri ${github.repo} deposuna ayrı bir branch olarak gönderir`
+                      : github.reason
+                  }
+                >
+                  <span className="flex items-center gap-1.5">
+                    <GitPullRequest size={13} /> {task.pr_url ? "PR'ı güncelle" : "GitHub'da PR aç"}
+                  </span>
+                </Btn>
+              )}
               <Btn disabled={busy} onClick={() => void decide("reject")}>
                 Hepsini at
               </Btn>

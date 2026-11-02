@@ -5,6 +5,7 @@ import type {
   Message,
   ChecksConfig,
   ChecksInfo,
+  GitHubStatus,
   ModelInfo,
   Project,
   SystemInfo,
@@ -78,6 +79,7 @@ export const api = {
   resumeMessage: (id: number) => post<{ ok: boolean }>(`/messages/${id}/resume`, {}),
 
   diff: (taskId: number) => req<TaskDiff>(`/tasks/${taskId}/diff`),
+  github: (taskId: number) => req<GitHubStatus>(`/tasks/${taskId}/github`),
   events: (taskId: number) => req<TaskEvent[]>(`/tasks/${taskId}/events`),
   decide: (taskId: number, decision: Decision) =>
     post<Task>(`/tasks/${taskId}/decision`, { decision }),

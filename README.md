@@ -57,6 +57,8 @@ Mod yok, ayrı ekran yok. Ne istediğinizi yazın; asistan mesajdan ne yapması 
 
 Sohbete yazmaya devam ettikçe değişiklikler aynı kopyada birikir.
 
+**GitHub:** Projenin `origin`'i GitHub'daysa kartta **GitHub'da PR aç** butonu da çıkar. Değişiklikler `orbit/task-N` branch'ine push edilir ve bir pull request açılır; sonraki değişikliklerden sonra **PR'ı güncelle** ile aynı PR güncellenir. Bunun için GitHub CLI gerekir (`brew install gh && gh auth login`). Push ve PR yalnızca butona bastığınızda yapılır. Asistan kendisi push edemez, çünkü komutları internete yalnızca paket depoları üzerinden çıkabilir. Orbit token saklamaz.
+
 **Tasarımı uygulama:** Bir tasarımın altındaki **Bunu uygula** butonu, o tasarımı (görsel ve HTML) ekleyerek mesajı hazırlar. Siz gönderirsiniz. Tasarımlar internet erişimi ve JavaScript kapalı bir tarayıcıda çizilir.
 
 **Görsel ekleme:** Ataç butonu, yapıştırma (⌘V) veya sürükle-bırak ile ekran görüntüsü eklenebilir. Asistan görseli okur.
@@ -94,6 +96,7 @@ Asistan projede bir değişiklik yapınca ORBIT projenizin test, lint ve tip kon
 - **Repo ayarları:** Repo içindeki `.claude/settings.json` dikkate alınmaz; bir repo kendi hook'larıyla komut çalıştıramaz.
 - **Loglar:** Token, anahtar ve şifre benzeri değerler kaydedilmeden önce `[gizli]` olarak maskelenir. `data/` klasörü yalnızca sizin kullanıcınız tarafından okunabilir.
 - **Git:** Veritabanı, loglar, hafıza ve çalışma kopyaları `.gitignore`'dadır; GitHub'a gitmez.
+- **GitHub:** Yalnızca Orbit'in kendi `orbit/task-N` branch'i ve yalnızca sizin tıklamanızla push edilir. Sizin branch'lerinize push yapılmaz.
 
 ## Proje Hafızası
 
@@ -138,6 +141,7 @@ server/acc/       FastAPI backend
   assistant.py    Tek asistanın talimatı ve araçları
   chat.py         Sohbet turu: model seçimi, oturum, çıktılar
   sessions.py     Sohbetteki değişiklikler: kopya, commit, kontroller, birleştirme
+  github.py       Değişiklikleri GitHub'a PR olarak gönderme
   cost_guard.py   Ücretli kullanım engelleri
 web/src/          React arayüzü
 docs/             Mimari kararlar
