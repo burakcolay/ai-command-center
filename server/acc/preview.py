@@ -20,10 +20,11 @@ import time
 from pathlib import Path
 from typing import Any
 
-from acc import checks, config, gitops
+from acc import checks, config, gitops, ios_preview
 
 ORIGIN = "http://onizleme.orbit"
 VIEWS = {"phone": (393, 852), "desktop": (1280, 800)}
+IMAGES = (*VIEWS, "ios")  # the files a preview can have
 OUTPUT_DIRS = ("dist", "build", "out", "public", ".")  # first one with an index.html wins
 MAX_ERRORS = 12
 OWN_BLOCK = "net::ERR_FAILED"
@@ -55,6 +56,15 @@ def plan(cwd: Path) -> dict[str, Any] | None:
             return {"setup": setup, "build": f"{pm} run build"}
     if (cwd / "index.html").exists():
         return {"setup": None, "build": None}
+    return None
+
+
+def kind(cwd: Path) -> str | None:
+    """What preview this project gets: "web", "ios" (an Xcode project) or none."""
+    if plan(cwd):
+        return "web"
+    if ios_preview.find(cwd):
+        return "ios"
     return None
 
 
@@ -149,16 +159,24 @@ async def render(root: Path, out: Path) -> dict[str, Any]:
     return {"images": images, "errors": list(dict.fromkeys(errors)), "blocked": blocked}
 
 
-async def run(task_id: int, wt: Path, cwd: Path) -> dict[str, Any]:
-    """Build (sandboxed) and screenshot. Always cleans the build output away afterwards."""
+async def run(task_id: int, wt: Path, cwd: Path, unsandboxed: bool = False) -> dict[str, Any]:
+    """Build (sandboxed) and screenshot. Always cleans the build output away afterwards.
+    `unsandboxed` only applies to an iOS build the user confirmed for this run."""
     started = time.time()
     p = plan(cwd)
     if p is None:
-        return {
-            "status": "unsupported",
-            "reason": "Web projesi bulunamadı: package.json'da build betiği ya da kökte "
-            "index.html olmalı.",
-        }
+        if ios_preview.find(cwd) is None:
+            return {
+                "status": "unsupported",
+                "reason": "Önizlenecek proje bulunamadı: package.json'da build betiği, kökte "
+                "index.html ya da bir Xcode projesi olmalı.",
+            }
+        try:
+            return await ios_preview.run(task_id, wt, cwd, folder(task_id), unsandboxed)
+        except Exception as e:  # report, never take the app down
+            return {"status": "error", "kind": "ios", "reason": str(e)[:500]}
+        finally:
+            await gitops.discard(wt)
     try:
         if p["build"]:
             cfg = {"setup": p["setup"], "commands": [{"name": "derleme", "command": p["build"]}]}
@@ -178,6 +196,7 @@ async def run(task_id: int, wt: Path, cwd: Path) -> dict[str, Any]:
         shot = await render(root, folder(task_id))
         return {
             "status": "ok",
+            "kind": "web",
             "images": {
                 v: f"/api/previews/{task_id}/{v}.png?t={int(started)}" for v in shot["images"]
             },

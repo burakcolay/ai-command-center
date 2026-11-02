@@ -65,6 +65,13 @@ Sohbete yazmaya devam ettikçe değişiklikler aynı kopyada birikir.
 - **Hatalar:** Tarayıcı konsolundaki hatalar ve engellenen istekler kartta listelenir. **Hataları düzelttir** düzeltme mesajını hazırlar; asistan hataları bir sonraki turda zaten görür. Derleme kırılırsa çıktısı gösterilir ve **Düzeltmesini iste** çıkar.
 - **Temizlik:** Derleme çıktısı önizlemeden sonra silinir, değişikliklere karışmaz. Önizleme sürerken o sohbete yazılamaz ve karar verilemez. Kod yeniden değişince eski önizleme kalkar; tekrar **Önizle**'ye basman gerekir.
 
+**iOS önizlemesi:** Projede bir Xcode projesi ya da workspace'i varsa (kökte ya da React Native / Expo düzenindeki `ios/` klasöründe) **Önizle** iOS önizlemesi alır. macOS'ta Xcode ve bir iPhone simülatörü gerekir.
+- **Onay:** Simülatör'deki uygulama Mac'inde senin yetkilerinle çalışır. Bu yüzden Orbit her seferinde önce sorar.
+- **Derleme:** `xcodebuild` sandbox'ta, imzalamasız çalışır. DerivedData, paketler ve Xcode'un yazdığı ev klasörü kopyanın içinde tutulur.
+- **Görüntü:** Uygulama en yeni iOS sürümündeki bir iPhone simülatörüne kurulur, açılır ve ekran görüntüsü kartta gösterilir. Sonra uygulama kaldırılır; simülatörü Orbit açtıysa kapatır.
+- **Sandbox engellerse:** Sandbox'ta internet yalnızca npm ve PyPI'ye açık. Bu yüzden ör. GitHub'dan Swift paketi çeken bir proje derlenemeyebilir. O zaman kartta **Sandbox dışında derle** çıkar; ayrı bir onayla yalnızca o seferlik çalışır.
+- **Doğrulama durumu:** Orbit'in testleri bu akışı Xcode'u taklit eden programlarla doğrular; gerçek Xcode'la ilk deneme senin Mac'inde olacak.
+
 **Tasarımı uygulama:** Bir tasarımın altındaki **Bunu uygula** butonu, o tasarımı (görsel ve HTML) ekleyerek mesajı hazırlar. Siz gönderirsiniz. Tasarımlar internet erişimi ve JavaScript kapalı bir tarayıcıda çizilir.
 
 **Görsel ekleme:** Ataç butonu, yapıştırma (⌘V) veya sürükle-bırak ile ekran görüntüsü eklenebilir. Asistan görseli okur.
@@ -96,7 +103,7 @@ Orbit devam edip etmeyeceğine modelin sözüyle değil ölçtüğü şeylerle k
 - kartta yeni bir aşama işaretlendi mi, aşama kaldı mı,
 - Claude'un ölçülen kotası %85'in altında mı.
 
-Biri "hayır" ise Otopilot durur, kendini kapatır ve nedeni cevabın altında yazar. Asistan bir karar gerektiğinde aşamayı işaretlemeden soru sorar; bu da Otopilot'u durdurur. Durdur düğmesi ya da bir hata da onu kapatır. Kartın aşama ilerlemesi **Projeler → Kart**'ta görünür.
+Biri "hayır" ise Otopilot durur, kendini kapatır, nedeni cevabın altında yazar ve bildirim açıksa Mac'ine bildirim gönderir. Asistan bir karar gerektiğinde aşamayı işaretlemeden soru sorar; bu da Otopilot'u durdurur. Durdur düğmesi ya da bir hata da onu kapatır. Kartın aşama ilerlemesi **Projeler → Kart**'ta görünür.
 
 **Ekip:** Asistan tek başına çalışmak zorunda değil; sen model seçmezsin, iş bölümünü kendisi yapar:
 - **Claude (lider):** İsteği anlar, planlar, kartı yazar ve işi dağıtır. Genel uzmanları: **Araştırmacı**, **Tasarımcı**, **Test yazarı**, **İnceleyici**.

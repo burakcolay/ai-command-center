@@ -138,3 +138,32 @@ def test_without_otopilot_nothing_starts_by_itself(client):
     r = client.put(f"/api/chats/{chat_id}/autopilot", json={"on": False})
     assert r.json()["autopilot_left"] == 0
     assert client.put("/api/chats/999999/autopilot", json={"on": True}).status_code == 404
+
+
+def test_stopping_sends_a_notification(client, monkeypatch):
+    from acc import notify
+
+    sent = []
+    monkeypatch.setattr(notify, "send", lambda title, body, force=False: sent.append(body))
+    p = _project_with_card(client)
+    chat_id = new_chat(client, p["id"])
+    client.put(f"/api/chats/{chat_id}/autopilot", json={"on": True})
+    client.post(f"/api/chats/{chat_id}/messages", json={"content": "başla", "project_id": p["id"]})
+    _settle(client, chat_id)
+    assert len(sent) == 1 and "tamamlandı" in sent[0]  # once, when it stopped
+
+
+def test_a_restart_breaks_the_chain_and_clears_leftovers(client):
+    from acc import config
+    from acc.api import chat_service
+    from acc.models import Message
+
+    chat_id = new_chat(client)
+    runs = config.DATA_DIR / "runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    (runs / "1-codex.jsonl").write_text("{}")
+    with session() as s:
+        s.get(Chat, chat_id).autopilot_left = 4
+        s.add(Message(chat_id=chat_id, role="assistant", content="", status="streaming"))
+    chat_service.recover()
+    assert _left(chat_id) == 0 and not runs.exists()

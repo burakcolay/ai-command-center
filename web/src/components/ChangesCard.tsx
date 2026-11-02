@@ -8,7 +8,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api } from "../lib/api";
+import { ApiError, api } from "../lib/api";
 import { toolTarget } from "../lib/format";
 import type { Decision, GitHubStatus, Task, TaskEvent, TaskStepState } from "../lib/types";
 import { ChecksPanel } from "./ChecksPanel";
@@ -31,6 +31,23 @@ const FIX_TEXT = "Başarısız kalite kontrollerini düzelt.";
 export function ChangesCard({ task, events, onLoadEvents, onAsk, onError }: Props) {
   const [logOpen, setLogOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // An iOS preview asks first (the app runs in the Simulator with the user's rights); the
+  // server's question is shown as is and only a yes repeats the request with that consent.
+  const preview = async (opts: { allow_device?: boolean; unsandboxed?: boolean } = {}) => {
+    setBusy(true);
+    try {
+      await api.preview(task.id, opts);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 428) {
+        if (window.confirm(e.message)) await preview({ ...opts, allow_device: true });
+      } else {
+        onError((e as Error).message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
   const working = task.status === "running" || task.status === "queued";
   const review = task.status === "waiting_approval";
   const steps = task.steps;
@@ -115,7 +132,16 @@ export function ChangesCard({ task, events, onLoadEvents, onAsk, onError }: Prop
 
         {task.preview && task.preview.status !== "unsupported" && (
           <div className="mt-4">
-            <PreviewPanel preview={task.preview} onFix={onAsk} />
+            <PreviewPanel
+              preview={task.preview}
+              onFix={onAsk}
+              onBuildOutsideSandbox={() => {
+                const question = task.preview?.confirm;
+                if (question && window.confirm(question)) {
+                  void preview({ allow_device: true, unsandboxed: true });
+                }
+              }}
+            />
           </div>
         )}
         {task.preview?.status === "unsupported" && (
@@ -165,14 +191,8 @@ export function ChangesCard({ task, events, onLoadEvents, onAsk, onError }: Prop
               </Btn>
               <Btn
                 disabled={busy || task.preview?.status === "running"}
-                onClick={() => {
-                  setBusy(true);
-                  api
-                    .preview(task.id)
-                    .catch((e) => onError((e as Error).message))
-                    .finally(() => setBusy(false));
-                }}
-                title="Uygulamayı sandbox'ta derleyip internetsiz bir tarayıcıda telefon ve masaüstü görüntüsünü alır"
+                onClick={() => void preview()}
+                title="Web: sandbox'ta derleyip internetsiz bir tarayıcıda telefon ve masaüstü görüntüsü. iOS: Xcode ile derleyip Simülatör'de ekran görüntüsü (onayınla)."
               >
                 <span className="flex items-center gap-1.5">
                   <Eye size={13} /> Önizle

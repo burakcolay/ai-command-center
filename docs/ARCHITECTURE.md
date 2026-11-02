@@ -236,7 +236,7 @@ Kullanıcı model seçmez; iş bölümü koddadır.
   - aşama var mı, hepsi bitti mi, turdan önceye göre en az bir aşama daha işaretlendi mi,
   - `routing.utilization` ile Claude kotası %85'i geçti mi,
   - tur hakkı kaldı mı.
-- **Sonuç:** Karar `meta.autopilot = {go, reason, phase}` olarak saklanır. Devam ediliyorsa sohbete `meta.autopilot = true` olan bir kullanıcı mesajı ("Devam: kartta sıradaki aşama (otopilot).") ve yeni bir yanıt eklenir; ikisi de WebSocket'le yayınlanır. Durulduğunda `autopilot_left = 0` olur ve `{"type": "chat"}` olayı arayüzdeki düğmeyi kapatır. İptal ya da hata da Otopilot'u kapatır. Otopilot turları hafif sohbet moduna düşmez.
+- **Sonuç:** Karar `meta.autopilot = {go, reason, phase}` olarak saklanır. Devam ediliyorsa sohbete `meta.autopilot = true` olan bir kullanıcı mesajı ("Devam: kartta sıradaki aşama (otopilot).") ve yeni bir yanıt eklenir; ikisi de WebSocket'le yayınlanır. Durulduğunda `autopilot_left = 0` olur, `{"type": "chat"}` olayı arayüzdeki düğmeyi kapatır ve bildirim gönderilir. Sunucu bir tur sürerken yeniden başlarsa o sohbetin Otopilot'u kapanır. İptal ya da hata da Otopilot'u kapatır. Otopilot turları hafif sohbet moduna düşmez.
 - **Neden ölçüm:** Modelin "bitti" demesi yeterli değildir. Kontrolleri Orbit kendisi çalıştırır, aşama işaretini dosyadan okur, kotayı sağlayıcının bildirdiği değerden alır.
 
 ### Token kullanımı (`usage.py`)
@@ -300,6 +300,17 @@ Kullanıcı model seçmez; iş bölümü koddadır.
 - **Hatalar:** Konsol hataları ve `pageerror` en fazla 12 tane toplanır. Orbit'in kendi engellemesinden doğan `net::ERR_FAILED` satırları süzülür. Sonraki turun istemine `preview_block` ile eklenir; internetin bilerek kapalı olduğu da belirtilir, böylece model yalnızca ağ yokluğundan doğan hatalar için çalışan kodu bozmaz.
 - **Temizlik ve kilit:** Derleme çıktısı `finally` içinde `gitops.discard` ile silinir. Önizleme sürerken o sohbete mesaj gönderilemez, karar verilemez, ikinci önizleme başlatılamaz (409). Sunucu yeniden başlarsa yarıda kalan önizleme `error` olur. Kodu değiştiren yeni bir tur ya da geri alma eski önizlemeyi siler (eski hatalar sonraki tura gitmez); oturum kapanınca görüntüler de silinir.
 
+### iOS önizlemesi (`ios_preview.py`)
+
+- **Ne zaman:** Web planı yoksa ve kökte ya da `ios/` altında `*.xcworkspace` / `*.xcodeproj` varsa (`preview.kind`). Workspace önceliklidir (CocoaPods). Scheme: proje adıyla aynı paylaşılmış scheme, yoksa ilk paylaşılmış scheme, yoksa proje adı.
+- **Onaylar:** Simülatör uygulaması kullanıcının yetkileriyle çalışan bir Mac sürecidir. Bu yüzden `POST /tasks/{id}/preview`, `allow_device: true` gelmeden 428 döner ve arayüz sunucunun sorusunu gösterir. Sandbox dışında derleme `unsandboxed: true` ister ve yalnızca `allow_device` ile birlikte geçerlidir. İkisi de o tek çalıştırma içindir, saklanmaz. Xcode yoksa soru sorulmaz, sonuç `unsupported` olur.
+- **Derleme:** Komut: `xcodebuild -project|-workspace … -scheme … -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath .orbit-cache/ios -clonedSourcePackagesDirPath .orbit-cache/ios/packages CODE_SIGNING_ALLOWED=NO build`.
+  - Sandbox içinde `HOME` ve `CFFIXED_USER_HOME` kopyadaki `.orbit-cache/ios/home`'a yönlendirilir. Sandbox kurulu değilse derleme hiç yapılmaz.
+  - `.orbit-cache` git'e girmez; bir sonraki derleme hızlı olsun diye silinmez.
+- **Gösterim:** Sırasıyla şu `xcrun simctl` adımları çalışır: `list --json devices available` (açık iPhone varsa o, yoksa en yeni iOS'taki iPhone) → `bootstatus -b` → `install` → `launch --terminate-running-process` → `status_bar override --time 9:41` → 4 sn → `io screenshot`. `finally` içinde `terminate` ve `uninstall` çalışır; simülatörü Orbit açtıysa `shutdown` da.
+- **Sonuç:** `kind: "ios"`, `device`, `sandboxed`. Derleme sandbox'ta başarısız olursa `confirm` alanı arayüze sandbox dışı derlemenin sorusunu taşır.
+- **Doğrulama:** Testler `ACC_XCODEBUILD` / `ACC_XCRUN` ile gerçek komut biçimini taklit eden programlar kullanır: onay sırası, sandbox'ta derleme, adım sırası, açık simülatöre dokunmama, çöken uygulamada da temizlik. Gerçek Xcode'la ilk çalıştırma kullanıcının Mac'inde olacak.
+
 ### Proje Hafızası
 
 - **Dosya:** Proje başına bir markdown dosyası (`MEMORY_DIR/<Proje>.md`, varsayılan `data/memory`).
@@ -362,6 +373,6 @@ waiting_approval ──reject──► cancelled (worktree + branch silinir)
 - [x] **Otopilot:** kartın aşamalarını ölçülen koşullarla (değişiklik, kontroller, inceleme, işaretlenen aşama, kota) kendiliğinden ilerletme, tur sınırıyla
 - [x] **Token kullanımı:** tüm sağlayıcıların sayıları tek biçimde, günlük ve model başına özet, en çok harcayan turlar
 - [x] **Web önizlemesi:** sandbox'ta derleme, internetsiz tarayıcıda telefon ve masaüstü görüntüsü, konsol hataları sonraki tura
-- [ ] **Sıradaki adaylar:** iOS simülatör ekran görüntüsü (Mac'te doğrulanmalı)
+- [x] **iOS önizlemesi:** Xcode derlemesi sandbox'ta, Simülatör'de ekran görüntüsü, çalıştırma başına onay (gerçek Xcode'la ilk deneme kullanıcının Mac'inde)
 - [ ] Grok Build adaptörü (ücretsiz erişim doğrulanırsa)
 - [ ] Faz 4–8: dokümandaki sırayla

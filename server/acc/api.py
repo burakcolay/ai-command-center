@@ -462,22 +462,33 @@ async def task_github(task_id: int):
         raise HTTPException(404) from None
 
 
+class PreviewIn(BaseModel):
+    # The user confirmed, for this run only: running the app in the iOS Simulator, and
+    # building it outside the sandbox. Without them an iOS preview answers 428.
+    allow_device: bool = False
+    unsandboxed: bool = False
+
+
 @router.post("/tasks/{task_id}/preview", status_code=202)
-async def task_preview(task_id: int):
+async def task_preview(task_id: int, body: PreviewIn | None = None):
     """Build the app in the sandbox and screenshot it; the result arrives as a task update."""
+    body = body or PreviewIn()
+    unsandboxed = body.unsandboxed and body.allow_device
     try:
-        payload = await sessions.start_preview(task_id)
+        payload = await sessions.start_preview(task_id, body.allow_device)
     except LookupError:
         raise HTTPException(404) from None
     except InvalidTransition as e:
         raise HTTPException(409, str(e)) from None
-    chat_service.spawn(sessions.run_preview(task_id))
+    except sessions.NeedsConfirmation as e:
+        raise HTTPException(428, str(e)) from None
+    chat_service.spawn(sessions.run_preview(task_id, unsandboxed))
     return payload
 
 
 @router.get("/previews/{task_id}/{view}.png")
 def preview_image(task_id: int, view: str):
-    if view not in preview.VIEWS:
+    if view not in preview.IMAGES:
         raise HTTPException(404)
     path = preview.folder(task_id) / f"{view}.png"
     if not path.is_file():

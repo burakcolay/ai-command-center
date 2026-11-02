@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import re
+import shutil
 import time
 import uuid
 from datetime import date, datetime
@@ -724,6 +725,7 @@ class ChatService:
             if not decision.go or (c.autopilot_left or 0) <= 0:
                 c.autopilot_left = 0
                 broker.publish({"type": "chat", "chat": serialize.chat(c)})
+                notify.send("Otopilot durdu", f"{c.title[:60]}: {decision.reason}")
                 return
             c.autopilot_left -= 1
             asked = Message(
@@ -831,8 +833,11 @@ class ChatService:
 
     def recover(self) -> None:
         sessions.recover()
+        # Codex token files of turns the restart cut off; finished turns removed their own.
+        shutil.rmtree(config.DATA_DIR / "runs", ignore_errors=True)
         with session() as s:
             for m in s.scalars(select(Message).where(Message.status == "streaming")):
+                s.get(Chat, m.chat_id).autopilot_left = 0  # its chain of turns broke here
                 m.status = "error"
                 m.content = (
                     "⚠ Sunucu yeniden başlatıldı; yanıt yarıda kaldı. "

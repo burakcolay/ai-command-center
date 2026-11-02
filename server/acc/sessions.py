@@ -16,7 +16,17 @@ from typing import Any
 
 from sqlalchemy import func, select
 
-from acc import checks, config, github, gitops, memory, preview, security, serialize
+from acc import (
+    checks,
+    config,
+    github,
+    gitops,
+    ios_preview,
+    memory,
+    preview,
+    security,
+    serialize,
+)
 from acc.db import session
 from acc.events import broker
 from acc.gitops import GitError
@@ -240,11 +250,17 @@ def previewing(task_id: int) -> bool:
         return bool(t and (t.preview or {}).get("status") == "running")
 
 
-async def run_preview(task_id: int) -> None:
+class NeedsConfirmation(Exception):
+    """The user has to agree first (e.g. an iOS app runs in the Simulator with their rights)."""
+
+
+async def run_preview(task_id: int, unsandboxed: bool = False) -> None:
     """Build in the sandbox and screenshot (acc.preview). The copy must not change meanwhile."""
     ws = await _workspace_of(task_id)
-    log(task_id, "Önizleme hazırlanıyor (sandbox'ta derleme, kilitli tarayıcıda görüntü).")
-    result = await preview.run(task_id, ws.wt, ws.cwd)
+    log(task_id, "Önizleme hazırlanıyor (sandbox'ta derleme, ardından ekran görüntüsü).")
+    if unsandboxed:
+        log(task_id, "iOS derlemesi kullanıcının onayıyla bu sefer sandbox dışında çalışıyor.")
+    result = await preview.run(task_id, ws.wt, ws.cwd, unsandboxed)
     _update(task_id, preview=result)
     text = {
         "ok": f"Önizleme hazır ({result.get('seconds')} sn, {len(result.get('errors') or [])} "
@@ -254,7 +270,8 @@ async def run_preview(task_id: int) -> None:
     log(task_id, text)
 
 
-async def start_preview(task_id: int) -> dict[str, Any]:
+async def start_preview(task_id: int, allow_device: bool = False) -> dict[str, Any]:
+    """`allow_device`: the user agreed to run the app in the iOS Simulator this time."""
     with session() as s:
         t = s.get(Task, task_id)
         if t is None or t.kind != TaskKind.SESSION:
@@ -262,9 +279,15 @@ async def start_preview(task_id: int) -> dict[str, Any]:
         status, wt = TaskStatus(t.status), t.worktree
     if status != TaskStatus.WAITING_APPROVAL or not wt:
         raise InvalidTransition("Önizleme yalnızca asistan çalışmıyorken alınabilir.")
+    ws = await _workspace_of(task_id)
+    kind = preview.kind(ws.cwd)
+    if kind == "ios" and ios_preview.available() and not allow_device:
+        raise NeedsConfirmation(ios_preview.CONFIRM)
     if previewing(task_id):
         raise InvalidTransition("Önizleme zaten hazırlanıyor.")
-    return _update(task_id, preview={"status": "running", "started": int(time.time())})
+    return _update(
+        task_id, preview={"status": "running", "kind": kind, "started": int(time.time())}
+    )
 
 
 def preview_block(task_id: int) -> str:

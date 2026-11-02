@@ -271,7 +271,15 @@ export interface UsageSummary {
 /** The app built in the sandbox and shown by a browser with no network. */
 export interface TaskPreview {
   status: "running" | "ok" | "build_failed" | "unsupported" | "no_output" | "error";
-  images?: { phone?: string; desktop?: string };
+  /** Web: sandboxed build + offline browser. iOS: Xcode build + Simulator screenshot. */
+  kind?: "web" | "ios" | null;
+  images?: { phone?: string; desktop?: string; ios?: string };
+  /** iOS: the simulator used, e.g. "iPhone 16 Pro · iOS 18.2". */
+  device?: string;
+  /** iOS: whether the build ran in the sandbox. */
+  sandboxed?: boolean;
+  /** iOS build failed in the sandbox: what the user agrees to by building outside it. */
+  confirm?: string;
   errors?: string[];
   blocked?: string[];
   build?: string | null;
