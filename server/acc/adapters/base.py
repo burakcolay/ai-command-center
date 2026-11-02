@@ -108,6 +108,7 @@ class RunRequest:
     output_dir: Path | None = None  # where reports and design files go (also readable)
     session_id: str | None = None  # start a resumable conversation with this id
     resume: str | None = None  # continue an earlier conversation
+    agents: dict[str, Any] | None = None  # specialist subagents the model may delegate to
 
 
 EventKind = Literal["text", "delta", "tool", "log", "usage", "result", "error"]

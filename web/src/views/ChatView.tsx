@@ -336,6 +336,19 @@ function ScanDots() {
   );
 }
 
-export function activityText(tool: { name: string; input?: unknown }): string {
-  return `▸ ${tool.name} ${toolTarget(tool.input)}`.trim();
+const AGENT_LABEL: Record<string, string> = {
+  arastirmaci: "Araştırmacı",
+  tasarimci: "Tasarımcı",
+  "test-yazari": "Test yazarı",
+  inceleyici: "İnceleyici",
+};
+
+/** One live line: who is doing what ("Araştırmacı: rakip fiyatları", "Codex: ▸ Read app.ts"). */
+export function activityText(tool: { name: string; input?: unknown; agent?: string }): string {
+  const who = tool.agent ? `${AGENT_LABEL[tool.agent] ?? tool.agent}: ` : "";
+  if (tool.name === "Agent" || tool.name === "Task") {
+    const i = (tool.input ?? {}) as { description?: string };
+    return `${who}${i.description ?? "görev aldı"}`;
+  }
+  return `${who}▸ ${tool.name} ${toolTarget(tool.input)}`.trim();
 }

@@ -27,7 +27,8 @@ def test_reply_streams_and_completes(client, rec):
     assert state["chat"]["title"] == "Merhaba, nasılsın?"
     assert state["tasks"] == []  # just talking creates nothing to review
     req = rec.requests[-1]
-    assert req.system_prompt == assistant.SYSTEM and req.effort == "high"
+    assert req.system_prompt.startswith("Sen Orbit'sin") and "EKİP" in req.system_prompt
+    assert req.effort == "high"
     assert req.prompt.endswith("KULLANICININ MESAJI:\nMerhaba, nasılsın?")
 
 
@@ -35,7 +36,8 @@ def test_without_project_the_assistant_gets_web_and_a_scratch_folder(client, rec
     chat_id = new_chat(client)
     turn(client, chat_id, "Selam")
     req = rec.requests[-1]
-    assert req.tools == assistant.SCRATCH_TOOLS and "Bash" not in req.tools
+    assert req.tools == [*assistant.SCRATCH_TOOLS, "Agent"] and "Bash" not in req.tools
+    assert set(req.agents) == {"arastirmaci", "tasarimci"}
     assert req.settings is None  # no shell, so no sandbox needed
     assert req.cwd.name == str(chat_id) and req.cwd.is_dir()
     assert req.output_dir is not None and req.output_dir.is_dir()

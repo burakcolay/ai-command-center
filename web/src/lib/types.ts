@@ -87,6 +87,13 @@ export interface Message {
     task_id?: number;
     /** Waiting for the quota reset (unix seconds). */
     resume_at?: number;
+    /** Independent review of this turn's change by another model (or a separate session). */
+    review?: {
+      by: string;
+      summary: string;
+      issues: { onem: string; dosya: string; sorun: string; oneri: string }[];
+      fixed: boolean;
+    };
   } | null;
   task_id: number | null;
   created_at: string;
@@ -226,7 +233,11 @@ export interface DesignVariant {
 export type WsMessage =
   | { type: "message"; message: Message }
   | { type: "message_delta"; message_id: number; text: string }
-  | { type: "message_activity"; message_id: number; tool: { name: string; input?: unknown } }
+  | {
+      type: "message_activity";
+      message_id: number;
+      tool: { name: string; input?: unknown; agent?: string };
+    }
   | { type: "task"; task: Task }
   | { type: "event"; event: TaskEvent }
   | { type: "approvals_changed" };

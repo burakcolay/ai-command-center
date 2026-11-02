@@ -63,6 +63,16 @@ Sohbete yazmaya devam ettikçe değişiklikler aynı kopyada birikir.
 
 **Görsel ekleme:** Ataç butonu, yapıştırma (⌘V) veya sürükle-bırak ile ekran görüntüsü eklenebilir. Asistan görseli okur.
 
+**Ekip:** Asistan tek başına çalışmak zorunda değil; sen model seçmezsin, iş bölümünü kendisi yapar:
+- **Claude (lider):** İsteği anlar, planlar, kodu yazar. Büyük işlerde kendi uzman alt ajanlarına paralel iş verir: **Araştırmacı** (alt soruları ayrı ayrı araştırır), **Tasarımcı** (her tasarımı ayrı çizer), **Test yazarı**, **İnceleyici**. Sohbette canlı olarak "Tasarımcı: …" gibi kimin ne yaptığı görünür.
+- **Codex (ikinci göz):** Claude projede bir değişiklik yapınca Codex bunu dosyalara dokunmadan inceler. Ciddi bir sorun bulursa Claude düzeltir, katılmadığı maddeyi gerekçesiyle reddeder. Bulgular ve düzeltme cevabın altında görünür. Claude'un kotası biterse işi Codex devralır.
+- **Ollama (yerel):** Uzun sohbetleri ücretsiz özetler.
+
+Ekibin ne kadar çalışacağını **Ayarlar → Kalite** belirler:
+- **Ekonomik:** Tek asistan; alt ajan ve inceleme yok.
+- **Dengeli:** Büyük işlerde alt ajanlar. Her değişikliği başka bir model inceler; başka model yoksa yalnızca büyük değişiklikler incelenir.
+- **En iyi:** Her değişiklik incelenir. Başka model yoksa Claude ayrı bir oturumda inceler.
+
 **Hafıza:** Asistan aynı sohbetteki konuşmayı hatırlar. Çok uzun sohbetlerin eski kısımları özetlenir; özetleme varsa ücretsiz yerel modelle yapılır.
 
 **Model ve düşünme:** **Ayarlar**'dan kalite (Ekonomik / Dengeli / En iyi) ve model (Varsayılan / Sonnet / Opus / Fable) seçilir. Daha yüksek kalite daha derin düşünür ama kotayı daha hızlı harcar.
@@ -73,8 +83,21 @@ Asistan Claude Code ile çalışır. **Model Yöneticisi → İş dağılımı**
 
 **Seçim kuralları:**
 - Sağlıksız, kotası dolmuş veya ücretli API gerektiren model atlanır.
-- Claude'un kotası %90'ı geçerse ve başka bir abonelik modeli (ör. Codex) eklenmişse iş ona geçer.
+- İnceleme, değişikliği yazandan farklı bir modele gider.
+- Claude'un kotası %90'ı geçerse ve Codex kuruluysa iş ona geçer.
 - Claude hiç kullanılamıyorsa yerel model (Ollama) sohbeti sürdürür. Yerel model dosya okuyamaz ve değişiklik yapamaz.
+
+**Codex'i eklemek (ChatGPT aboneliği):**
+
+```bash
+npm install -g @openai/codex
+```
+
+```bash
+codex login
+```
+
+Girişte **ChatGPT hesabıyla** giriş yapın, API anahtarıyla değil. Orbit API anahtarıyla yapılmış bir girişi algılar ve ücret oluşmaması için Codex'i kapalı tutar; API anahtarı ortam değişkenleri de Codex'e hiç verilmez. Ardından **Model Yöneticisi → Kontrol et**'e basın, Codex "Kullanılabilir" görünmeli. Ayar gerekmez; inceleme işini kendiliğinden alır.
 
 ## Kalite kontrolleri
 
@@ -137,8 +160,9 @@ ORBIT'te **Model Yöneticisi → Kontrol et**'e basın, Ollama "Kullanılabilir"
 
 ```
 server/acc/       FastAPI backend
-  adapters/       Model sağlayıcıları (her biri ayrı modül)
-  assistant.py    Tek asistanın talimatı ve araçları
+  adapters/       Model sağlayıcıları: Claude Code, Codex, Ollama
+  assistant.py    Lider asistanın talimatı, araçları ve alt ajanları
+  review.py       Bağımsız inceleme ve düzeltme turu
   chat.py         Sohbet turu: model seçimi, oturum, çıktılar
   sessions.py     Sohbetteki değişiklikler: kopya, commit, kontroller, birleştirme
   github.py       Değişiklikleri GitHub'a PR olarak gönderme

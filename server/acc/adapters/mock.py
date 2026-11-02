@@ -85,6 +85,11 @@ class MockAdapter(ModelAdapter):
             yield AdapterEvent("result", {"text": text})
             return
 
+        if req.json_schema and "sorunlar" in req.json_schema.get("properties", {}):
+            review = {"ozet": "Demo incelemesi: ciddi bir sorun görmedim.", "sorunlar": []}
+            yield AdapterEvent("result", {"text": "", "structured": review})
+            return
+
         message = _message(req.prompt).lower()
         edit = any(w in message for w in EDIT_WORDS)
         parts = ["Demo yanıtı: mesajını aldım."]

@@ -1,10 +1,11 @@
 """Which model does which kind of work.
 
-There are two kinds: the assistant (everything the user asks in chat) and summaries/backup
-(free local model first). The router skips models that can't do the work, aren't healthy,
-are blocked by the cost guard or — when an alternative exists — are close to their
-subscription limit. The user can pin a model per kind. Adapters that aren't installed yet
-(e.g. Codex) are already listed: once added, they take over when the first choice can't.
+Three kinds: the assistant (everything the user asks in chat), independent review of its
+changes (preferably by a different model) and summaries/backup (free local model first).
+The router skips models that can't do the work, aren't healthy, are blocked by the cost
+guard or — when an alternative exists — are close to their subscription limit. The user can
+pin a model per kind. Adapters that aren't set up yet are listed too and take over as soon
+as they are.
 """
 
 from __future__ import annotations
@@ -37,6 +38,14 @@ WORK_KINDS: dict[str, WorkKind] = {
             "Sohbet, araştırma, tasarım ve kod değişikliği: hepsi tek asistan.",
             ["claude_code", "codex", "mock"],
             ("tools", "coding", "web_search"),
+        ),
+        WorkKind(
+            "review",
+            "Bağımsız inceleme",
+            "Asistanın değişikliklerini birleştirmeden önce inceler. Yazandan farklı bir model "
+            "tercih edilir; böylece biri kaçırdığını öteki yakalar.",
+            ["codex", "claude_code", "mock"],
+            ("tools", "review"),
         ),
         WorkKind(
             "summarize",
@@ -88,7 +97,9 @@ class Router:
             missing.append("tools")
         return f"gereken yetenek yok ({', '.join(missing)})" if missing else None
 
-    async def pick(self, kind: str, needs_tools: bool = False) -> Choice:
+    async def pick(
+        self, kind: str, needs_tools: bool = False, avoid: frozenset[str] = frozenset()
+    ) -> Choice:
         skipped: list[str] = []
         usable: list[tuple[ModelAdapter, float | None]] = []
         for adapter_id in self.order(kind):
@@ -114,6 +125,11 @@ class Router:
         first, first_use = usable[0]
         if overrides().get(kind) == first.info.id:
             return Choice(first, "elle seçildi", skipped)
+        # A second opinion should come from someone else (e.g. Codex reviewing Claude's work).
+        if avoid and first.info.id in avoid:
+            for alt, _ in usable[1:]:
+                if alt.info.id not in avoid:
+                    return Choice(alt, f"{first.info.name} yazdı; ikinci göz farklı model", skipped)
         # Quota: move off a nearly used-up subscription when there is somewhere to go.
         if first_use is not None and first_use >= QUOTA_SOFT_LIMIT:
             for alt, use in usable[1:]:

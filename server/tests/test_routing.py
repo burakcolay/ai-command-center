@@ -75,6 +75,15 @@ async def test_local_model_is_never_the_assistant():
     assert any("gereken yetenek yok" in s for s in choice.skipped)
 
 
+async def test_a_second_opinion_comes_from_someone_else():
+    adapters = [fake("codex"), fake("claude_code")]
+    choice = await _pick(adapters, "review", avoid=frozenset({"codex"}))
+    assert choice.adapter.info.id == "claude_code" and "ikinci göz" in choice.reason
+    # Nobody else around: the author's model still reviews (in a separate context).
+    alone = await _pick([fake("claude_code")], "review", avoid=frozenset({"claude_code"}))
+    assert alone.adapter.info.id == "claude_code"
+
+
 async def test_a_pinned_model_wins():
     adapters = [fake("claude_code"), fake("codex")]
     prefs.put("routing", {"assistant": "codex"})
@@ -102,7 +111,7 @@ async def test_paid_api_is_never_routed_to():
 
 def test_routing_api(client):
     kinds = {k["id"]: k for k in client.get("/api/routing").json()}
-    assert set(kinds) == {"assistant", "summarize"}
+    assert set(kinds) == {"assistant", "review", "summarize"}
     assert kinds["assistant"]["current"] == "mock" and kinds["assistant"]["override"] == "auto"
     r = client.put("/api/routing/assistant", json={"adapter": "mock"})
     assert r.status_code == 200

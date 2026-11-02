@@ -41,9 +41,21 @@ export function ApprovalsView({
 }
 
 const QUALITY = [
-  { id: "economy", label: "Ekonomik", note: "Daha az düşünür, kota daha uzun dayanır." },
-  { id: "balanced", label: "Dengeli", note: "Derin düşünür, kotayı dengeli kullanır. Önerilen." },
-  { id: "best", label: "En iyi", note: "En derin düşünme; kota en hızlı biter." },
+  {
+    id: "economy",
+    label: "Ekonomik",
+    note: "Tek asistan; alt ajan ve inceleme yok. Kota en uzun dayanır.",
+  },
+  {
+    id: "balanced",
+    label: "Dengeli",
+    note: "Büyük işlerde alt ajanlar. Değişiklikleri başka bir model (ör. Codex) inceler; o yoksa yalnızca büyük değişiklikler incelenir. Önerilen.",
+  },
+  {
+    id: "best",
+    label: "En iyi",
+    note: "En derin düşünme ve her değişiklikte bağımsız inceleme. Kota en hızlı biter.",
+  },
 ] as const;
 
 const MODELS = [
@@ -90,8 +102,7 @@ export function SettingsView({
           onChange={(v) => onPreference("claude_model", v)}
         />
         <p className="text-[12px] leading-relaxed text-faint">
-          Araştırma modu her zaman bir kademe daha derin düşünür. Model aboneliğinde yoksa
-          çalıştırma açık bir hata verir; ücretli kullanıma geçilmez.
+          Seçilen model aboneliğinde yoksa çalıştırma açık bir hata verir; ücretli kullanıma geçilmez.
         </p>
       </div>
 

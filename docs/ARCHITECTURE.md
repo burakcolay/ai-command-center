@@ -70,8 +70,9 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 
 ## 4. Model yönlendirici (`routing.py`)
 
-**İki iş türü vardır (`WORK_KINDS`):**
+**Üç iş türü vardır (`WORK_KINDS`):**
 - `assistant`: kullanıcının her mesajı. Sıra: Claude Code → Codex. Araç, kod ve web yeteneği gerekir.
+- `review`: değişikliklerin bağımsız incelemesi. Sıra: Codex → Claude Code; değişikliği yazan model `avoid` ile en sona itilir.
 - `summarize`: uzun sohbet özetleri ve Claude kullanılamadığında yedek sohbet. Sıra: Ollama → Claude Code.
 
 Sıralarda henüz kurulu olmayan adaptörler de (`codex`) yer alır. Adaptör kaydedildiği an devreye girer.
@@ -99,6 +100,15 @@ Sıralarda henüz kurulu olmayan adaptörler de (`codex`) yer alır. Adaptör ka
 | cancel_task | `cancel()` |
 
 **Yeni sağlayıcı eklemek** için `adapters/` altına bir modül yazılır ve `build_registry()` içine bir satır eklenir. Sohbet koduna dokunulmaz.
+
+### Codex: doğrulanmış davranış (codex-cli 0.166)
+
+- Bayraklar `--help` ile doğrulandı: `exec --json`, `-s read-only|workspace-write`, `-C`, `--add-dir`, `--output-schema`, `--ephemeral`, `--skip-git-repo-check`, `-c key=value`. `forced_login_method="chatgpt"` ve `web_search="live"` `--strict-config` ile kabul edildi.
+- `codex login status`: girişsizken "Not logged in" ve çıkış kodu 1. "API key" içeren bir giriş **ücretli sayılır ve engellenir**.
+- JSONL zarfı gözlendi: `thread.started`, `turn.started`, `error` (geçici yeniden bağlanma), `item.*`, `turn.completed` / `turn.failed`.
+- Gerçek bir ChatGPT çalıştırması bu makineden yapılamadı (OpenAI erişimi yok). Olay içerikleri belgelere göre sahte bir CLI ile test edildi; ilk gerçek çalıştırma kullanıcının Mac'inde son doğrulamadır.
+- İnceleme `read-only`, yazma işleri `workspace-write` sandbox'ında çalışır; ikisinde de ağ kapalıdır (web araması ayrı araçtır). Sistem talimatı istemin başına eklenir, çünkü Codex'te ayrı bir bayrağı yoktur.
+- "usage limit" mesajı `QuotaExceeded` olur; "try again in X hours Y minutes" okunur, yoksa 30 dakika beklenir.
 
 ### Claude Code: doğrulanmış davranış (CLI 2.1.x)
 
@@ -150,6 +160,18 @@ Kullanıcı mod seçmez. Her mesaj bir **turdur** (`ChatService._reply`). Asista
 - Rakamları kaynakla verir, doğrulayamadığını "tahmini" diye işaretler, uydurmaz.
 - Araştırma: alt sorular, 10-12+ arama, birincil kaynaklar. Kapsamlıysa rapor (Kısa cevap / Bulgular / Rakipler / Fırsatlar / Öneri + MVP / Riskler / Kaynaklar) çıktı klasörüne yazılır ve `MEMORY_DIR/Araştırmalar/` altına kaydedilir.
 - Küçük değişiklikleri hemen yapar; büyük, çok dosyalı işlerde önce kısa plan yazıp onay ister.
+
+### Ekip: alt ajanlar ve bağımsız inceleme
+
+Kullanıcı model seçmez; iş bölümü koddadır.
+
+- **Alt ajanlar** (`assistant.SUBAGENTS`, Claude Code `--agents` + `Agent` aracı): Araştırmacı, Tasarımcı, Test yazarı, İnceleyici. Her biri ayrı bir bağlamda, aynı abonelikle çalışır. Bir alt ajan liderin sahip olmadığı aracı alamaz (`assistant.team`); proje yoksa Test yazarı ve İnceleyici, salt okunur projede Tasarımcı da verilmez. Lider yalnızca büyük ve bölünebilir işlerde kullanır.
+  - Doğrulanmış davranış (CLI 2.1.316): alt ajanlar arka planda çalışır. Liderin turu biter, her biten alt ajan yeni bir tur başlatır, süreç hepsi bitince kapanır ve her tur için bir `result` gelir; adaptör yalnızca sonuncusunu cevap sayar. Alt ajanın araç çağrıları `parent_tool_use_id` taşır; adaptör bunları alt ajanın adıyla etiketler, alt ajanın kendi metni ana cevaba karışmaz.
+- **Bağımsız inceleme** (`review.py`, `ChatService._review`): Projede değişiklik yapan bir turdan sonra `router.pick("review", avoid={yazar})` bir inceleyici seçer.
+  - İnceleyici aynı izole kopyada salt okunur çalışır ve sabit bir JSON şemasıyla cevap verir (`ozet`, `sorunlar[]`: önem/dosya/sorun/öneri). Sonrasında kopyadaki commitlenmemiş her şey atılır; inceleyici iz bırakamaz.
+  - Yüksek ve orta önemli bulgular lidere tek bir düzeltme turu olarak gider. Claude kendi oturumunu sürdürür, geçmiş yeniden gönderilmez. Düzeltme ayrı bir commit ("İnceleme düzeltmeleri (Codex)") olur ve kontroller yeniden çalışır.
+  - Ne zaman çalışır (`review.wanted`): Ekonomik hiç; Dengeli başka bir model varsa ya da değişiklik büyükse (≥5 dosya veya ≥200 satır); En iyi her zaman (gerekirse Claude ayrı oturumda).
+  - İnceleme başarısız olursa (kota, hata) değişiklik korunur, günlüğe yazılır.
 
 ### Görseller ve tasarımlar
 
@@ -216,7 +238,9 @@ waiting_approval ──reject──► cancelled (worktree + branch silinir)
 - [x] **Proje Hafızası + otomatik karar günlüğü** (Obsidian uyumlu düz markdown)
 - [x] **Ollama adaptörü:** özetleme ve yedek sohbet; dosya araçları yok, asla değişiklik yapmaz
 - [x] **Uzun sohbet özetleme** (önce yerel model)
-- [ ] **Codex adaptörü:** ChatGPT aboneliği alındığında; CLI davranışı o zaman gerçek hesapla doğrulanacak
+- [x] **Codex adaptörü:** ChatGPT girişi zorunlu, salt okunur inceleme ve yedek asistan; gerçek hesapla ilk deneme kullanıcıda
+- [x] **Ekip:** Claude alt ajanları (araştırmacı, tasarımcı, test yazarı, inceleyici) ve farklı modelle bağımsız inceleme + düzeltme turu
+- [ ] **Gemini:** Gemini CLI kişisel girişi kapattı; Antigravity CLI (`agy`) arka planda güvenilir çalışıyorsa inceleme ve araştırma rolüyle
 - [x] **Kalite kapıları** (sandbox'ta, ORBIT'in kendisi çalıştırır)
 - [x] **Kota dolunca otomatik bekleme ve devam**
 - [x] **macOS bildirimleri**

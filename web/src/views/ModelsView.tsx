@@ -22,7 +22,7 @@ const CAP_LABEL: Record<string, string> = {
 
 // Shown so the roadmap is visible; these adapters are not wired yet.
 const PLANNED = [
-  { name: "OpenAI Codex", note: "ChatGPT aboneliği gerekli · abonelik alınınca eklenecek", phase: "Sonra" },
+  { name: "Gemini (Antigravity CLI)", note: "Google AI Pro · arka planda çalışması doğrulanacak", phase: "Sonra" },
   { name: "Grok Build", note: "Koşullu ücretsiz erişim · doğrulanacak", phase: "Faz 2" },
   { name: "Kimi Code", note: "Üyelik gerekli · opsiyonel", phase: "Sonra" },
   { name: "DeepSeek", note: "Ücretli API · varsayılan kapalı", phase: "Sonra" },

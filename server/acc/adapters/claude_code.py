@@ -5,6 +5,9 @@ Verified against Claude Code 2.1.x stream-json output:
   - rate_limit_event carries real 5-hour / 7-day utilization and overage flags.
   - result carries `structured_output` when --json-schema is given.
   - total_cost_usd is a notional figure on subscriptions and is NOT shown as spend.
+  - Subagents (Agent tool) run in the background in 2.1.3xx: the lead's turn ends, each
+    finished subagent starts another turn, and the process exits when all are done — with one
+    result per turn. Only the last result is the answer.
 """
 
 from __future__ import annotations
@@ -48,7 +51,7 @@ class ClaudeCodeAdapter(ModelAdapter):
         auth_method="claude.ai aboneliği (claude auth login)",
         requires_membership=True,
         requires_api_key=False,
-        notes="Planlama, kodlama, mimari ve inceleme için ana ajan.",
+        notes="Lider asistan: anlar, planlar, kodu yazar; büyük işleri alt ajanlarına dağıtır.",
     )
     capabilities = Capabilities(
         chat=True,
@@ -67,6 +70,7 @@ class ClaudeCodeAdapter(ModelAdapter):
         self.binary = binary
         self._procs: dict[str, asyncio.subprocess.Process] = {}
         self._last_usage: Usage | None = None
+        self._subagents: dict[str, str] = {}  # Agent tool_use id -> subagent name
 
     async def _exec(self, *args: str, timeout: float = 20) -> tuple[int, str]:
         proc = await asyncio.create_subprocess_exec(
@@ -153,6 +157,8 @@ class ClaudeCodeAdapter(ModelAdapter):
             args += ["--permission-mode", req.permission_mode]
         if req.json_schema:
             args += ["--json-schema", json.dumps(req.json_schema)]
+        if req.agents:
+            args += ["--agents", json.dumps(req.agents)]
         if req.system_prompt:
             args += ["--append-system-prompt", req.system_prompt]
         model = req.model or prefs.get("claude_model", "default")
@@ -190,6 +196,9 @@ class ClaudeCodeAdapter(ModelAdapter):
         proc.stdin.close()
 
         got_result = False
+        # Subagents run in the background: each one that finishes wakes the lead for another
+        # turn, and every turn ends with its own result. The last one is the real answer.
+        final: AdapterEvent | None = None
         try:
             async for raw in proc.stdout:
                 try:
@@ -199,10 +208,16 @@ class ClaudeCodeAdapter(ModelAdapter):
                         raise SessionLost(raw.decode(errors="replace").strip()) from None
                     continue
                 for ev in self._translate(msg):
-                    if ev.kind in ("result", "error"):
+                    if ev.kind == "result":
+                        final = ev
+                        continue
+                    if ev.kind == "error":
                         got_result = True
                     yield ev
             await proc.wait()
+            if final is not None:
+                got_result = True
+                yield final
             if not got_result:
                 err = (await proc.stderr.read()).decode(errors="replace").strip()
                 if proc.returncode in (-15, -9):
@@ -249,7 +264,10 @@ class ClaudeCodeAdapter(ModelAdapter):
                     AdapterEvent("log", {"text": f"Kota uyarısı: %{round(used * 100)} kullanıldı."})
                 )
             return events
+        parent = msg.get("parent_tool_use_id")
         if t == "stream_event":
+            if parent:  # a subagent's own words stay inside the subagent
+                return []
             ev = msg.get("event") or {}
             delta = ev.get("delta") or {}
             if ev.get("type") == "content_block_delta" and delta.get("type") == "text_delta":
@@ -258,14 +276,17 @@ class ClaudeCodeAdapter(ModelAdapter):
         if t == "assistant":
             out = []
             for block in (msg.get("message") or {}).get("content") or []:
-                if block.get("type") == "text" and block.get("text"):
+                if block.get("type") == "text" and block.get("text") and not parent:
                     out.append(AdapterEvent("text", {"text": block["text"]}))
                 elif block.get("type") == "tool_use" and block.get("name") != "StructuredOutput":
-                    out.append(
-                        AdapterEvent(
-                            "tool", {"name": block.get("name"), "input": block.get("input")}
-                        )
-                    )
+                    data = {"name": block.get("name"), "input": block.get("input")}
+                    if block.get("name") in ("Agent", "Task"):  # delegating to a subagent
+                        agent = (block.get("input") or {}).get("subagent_type") or "alt ajan"
+                        self._subagents[block.get("id")] = agent
+                        data["agent"] = agent
+                    elif parent:  # a step taken by a subagent, labelled with who took it
+                        data["agent"] = self._subagents.get(parent, "alt ajan")
+                    out.append(AdapterEvent("tool", data))
             return out
         if t == "result":
             if msg.get("is_error"):

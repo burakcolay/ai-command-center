@@ -38,7 +38,8 @@ def test_an_edit_lands_in_an_isolated_copy_for_review(client, rec):
     m = turn(client, chat_id, "Başlığa bir satır ekle", p["id"])
     task_id = m["meta"]["task_id"]
     req = rec.requests[-1]
-    assert req.tools == assistant.PROJECT_TOOLS and req.settings["sandbox"]["enabled"]
+    assert req.tools == [*assistant.PROJECT_TOOLS, "Agent"] and req.settings["sandbox"]["enabled"]
+    assert set(req.agents) == {"arastirmaci", "tasarimci", "test-yazari", "inceleyici"}
     assert req.cwd == config.WORKTREES_DIR / f"chat-{chat_id}"
     assert "ÇALIŞMA KOPYASI" in req.prompt
 
@@ -174,7 +175,8 @@ def test_a_folder_without_git_is_opened_read_only(client, rec, tmp_path):
     chat_id = new_chat(client, r.json()["id"])
     m = turn(client, chat_id, "Bir satır ekle", r.json()["id"])
     req = rec.requests[-1]
-    assert req.tools == assistant.READ_ONLY_TOOLS and req.cwd == folder
+    assert req.tools == [*assistant.READ_ONLY_TOOLS, "Agent"] and req.cwd == folder
+    assert set(req.agents) == {"arastirmaci"}  # no subagent gets more than the lead has
     assert "salt okunur" in req.prompt and "git init" in req.prompt
     assert "task_id" not in (m["meta"] or {})
     assert not (folder / "ORBIT_DEMO.md").exists()

@@ -28,6 +28,7 @@ from acc import (
     designs,
     memory,
     notify,
+    review,
     security,
     serialize,
     sessions,
@@ -37,12 +38,14 @@ from acc.adapters.base import AdapterError, QuotaExceeded, RunRequest, SessionLo
 from acc.db import session
 from acc.events import broker
 from acc.gitops import GitError
+from acc.gitops import discard as discard_uncommitted
 from acc.models import Chat, Message, Project, Task
 from acc.routing import Router
 
 TRANSCRIPT_LIMIT = 150_000  # chars of history sent when a conversation must be rebuilt
 COMPACT_AT = 30_000  # unsummarised history longer than this gets summarised
 KEEP_RECENT = 6  # newest messages always sent verbatim
+TEAM_ADAPTERS = ("claude_code", "mock")  # leads that can delegate to subagents
 NOTIFY_AFTER_S = 45  # long turns (research, big edits) end with a desktop notification
 RESUME_MARGIN_S = 60  # wait this long past the quota reset before continuing
 LOCAL_NOTE = (
@@ -256,6 +259,11 @@ class ChatService:
         out_dir = config.DATA_DIR / "outputs" / str(message_id)
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        if adapter.info.id in TEAM_ADAPTERS and not local:
+            lead_tools, lead_system, team = assistant.setup(tools)
+        else:
+            lead_tools, lead_system, team = tools, assistant.SYSTEM, None
+
         def build(with_history: bool) -> str:
             parts = [LOCAL_NOTE if local else note]
             if project_name:
@@ -282,12 +290,15 @@ class ChatService:
             with session() as s:
                 history = conversation(s, s.get(Chat, chat_id), user_id)
 
-        def request(resume_id: str | None, new_session: str | None) -> RunRequest:
+        def request(
+            resume_id: str | None, new_session: str | None, prompt: str | None = None
+        ) -> RunRequest:
             return RunRequest(
-                prompt=build(with_history=resume_id is None),
+                prompt=prompt or build(with_history=resume_id is None),
                 cwd=cwd,
-                system_prompt=assistant.SYSTEM,
-                tools=tools,
+                system_prompt=lead_system,
+                tools=lead_tools,
+                agents=team,
                 permission_mode="dontAsk",
                 settings=assistant.settings(tools),
                 stream_text=True,
@@ -297,6 +308,12 @@ class ChatService:
                 session_id=new_session,
                 resume=resume_id,
             )
+
+        def fix_request(instructions: str) -> RunRequest:
+            """The lead's follow-up after a review: same conversation when it can resume."""
+            if sid := new_session or resume:
+                return request(sid, None, prompt=instructions)
+            return request(None, None, prompt=build(with_history=True) + "\n\n" + instructions)
 
         new_session = None if (resume or adapter.info.id != "claude_code") else str(uuid.uuid4())
         buf: list[str] = []
@@ -319,6 +336,11 @@ class ChatService:
                 self._activity(message_id, "Değişiklikler", "kontrol ediliyor")
                 if await sessions.finish_turn(ws, question, text, adapter.info.id):
                     meta["task_id"] = ws.task_id
+                    text, reviewed = await self._review(
+                        message_id, ws, question, text, adapter, fix_request
+                    )
+                    if reviewed:
+                        meta["review"] = reviewed
             self._finish(message_id, text, "done", adapter.info.id, meta)
             if time.monotonic() - started > NOTIFY_AFTER_S:
                 notify.send("Orbit yanıt verdi", question.strip().splitlines()[0][:120])
@@ -358,6 +380,93 @@ class ChatService:
             elif ev.kind == "error":
                 raise AdapterError(ev.data.get("text") or "Bilinmeyen hata")
         raise AdapterError("Model yanıtı tamamlamadan durdu.")
+
+    async def _result(self, message_id: int, adapter, req: RunRequest, who: str) -> dict:
+        """Run to completion and return the result event (e.g. structured output)."""
+        run_id = uuid.uuid4().hex
+        self._runs[message_id] = (adapter.info.id, run_id)
+        async for ev in adapter.run(req, run_id):
+            if ev.kind == "tool":
+                tool = security.redact_data({**ev.data, "agent": ev.data.get("agent") or who})
+                broker.publish({"type": "message_activity", "message_id": message_id, "tool": tool})
+            elif ev.kind == "result":
+                return ev.data
+            elif ev.kind == "error":
+                raise AdapterError(ev.data.get("text") or "Bilinmeyen hata")
+        raise AdapterError("Model yanıtı tamamlamadan durdu.")
+
+    def _append(self, message_id: int, text: str) -> None:
+        broker.publish({"type": "message_delta", "message_id": message_id, "text": text})
+
+    async def _review(
+        self,
+        message_id: int,
+        ws: sessions.Workspace,
+        question: str,
+        text: str,
+        author,
+        fix_request,
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Another model reviews the change; the lead fixes what is serious (one round)."""
+        if assistant.quality() == "economy":
+            return text, None
+        avoid = frozenset({author.info.id})
+        reviewer = (await self.router.pick("review", needs_tools=True, avoid=avoid)).adapter
+        if reviewer is None:
+            return text, None
+        independent = reviewer.info.id != author.info.id
+        diff = await sessions.diff(ws.task_id)
+        if not review.wanted(independent, diff):
+            return text, None
+        name = reviewer.info.name if independent else f"{reviewer.info.name} (ayrı oturum)"
+        with session() as s:
+            results = s.get(Task, ws.task_id).checks or []
+        self._activity(message_id, name, "değişiklikleri inceliyor")
+        sessions.log(ws.task_id, f"Bağımsız inceleme: {name}")
+        req = RunRequest(
+            prompt=review.prompt(question, diff, results),
+            cwd=ws.cwd,
+            system_prompt=review.SYSTEM,
+            json_schema=review.SCHEMA,
+            tools=review.READ_ONLY,
+            permission_mode="dontAsk",
+            settings=assistant.settings(review.READ_ONLY),
+            effort=assistant.effort(),
+        )
+        try:
+            data = await self._result(message_id, reviewer, req, name)
+        except AdapterError as e:  # incl. quota: the change stays, just unreviewed
+            if message_id in self._cancelling:
+                return text + "\n\n_(inceleme durduruldu)_", None
+            sessions.log(ws.task_id, f"İnceleme yapılamadı: {e}")
+            return text, None
+        finally:
+            await discard_uncommitted(ws.wt)  # a reviewer never leaves changes behind
+        r = review.parse(name, data.get("structured"))
+        if r is None:
+            sessions.log(ws.task_id, f"{name} incelemesi okunamadı.")
+            return text, None
+        sessions.log(ws.task_id, f"{name}: {r.summary} ({len(r.issues)} bulgu)")
+        note = review.report(r)
+        self._append(message_id, note)
+        text += note
+        if not r.serious:
+            return text, r.as_meta(fixed=False)
+
+        self._activity(message_id, author.info.name, "inceleme bulgularını düzeltiyor")
+        buf: list[str] = []
+        try:
+            fix_text = await self._run(message_id, author, fix_request(review.fix_prompt(r)), buf)
+        except AdapterError as e:
+            partial = "".join(buf).strip()
+            if message_id in self._cancelling:
+                return text + partial + "\n\n_(düzeltme durduruldu)_", r.as_meta(fixed=False)
+            sessions.log(ws.task_id, f"İnceleme düzeltmesi yapılamadı: {e}")
+            return text + partial + f"\n\n⚠ Düzeltme yapılamadı: {e}", r.as_meta(fixed=False)
+        text += fix_text
+        title = f"İnceleme düzeltmeleri ({r.by})"
+        fixed = await sessions.finish_turn(ws, title, fix_text, author.info.id)
+        return text, r.as_meta(fixed=fixed)
 
     async def _collect_outputs(
         self, message_id: int, out_dir: Path, question: str, project_name: str | None
