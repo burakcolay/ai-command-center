@@ -28,6 +28,7 @@ from acc.adapters.base import (
     ModelState,
     QuotaExceeded,
     RunRequest,
+    SessionLost,
     Usage,
     UsageWindow,
 )
@@ -129,7 +130,13 @@ class ClaudeCodeAdapter(ModelAdapter):
         )
 
     def _args(self, req: RunRequest) -> list[str]:
-        args = ["-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence"]
+        args = ["-p", "--output-format", "stream-json", "--verbose"]
+        if req.resume:
+            args += ["--resume", req.resume]
+        elif req.session_id:
+            args += ["--session-id", req.session_id]
+        else:
+            args += ["--no-session-persistence"]
         # Project-level .claude/settings.json inside a repo is untrusted (it can define hooks
         # that run commands). Only the user's own settings plus ours are loaded.
         args += ["--setting-sources", "user"]
@@ -153,7 +160,7 @@ class ClaudeCodeAdapter(ModelAdapter):
             args += ["--model", model]
         if req.effort:
             args += ["--effort", req.effort]
-        for d in req.read_dirs:
+        for d in [*req.read_dirs, *([req.output_dir] if req.output_dir else [])]:
             args += ["--add-dir", str(d)]
         if req.stream_text:
             args += ["--include-partial-messages"]
@@ -188,6 +195,8 @@ class ClaudeCodeAdapter(ModelAdapter):
                 try:
                     msg = json.loads(raw)
                 except json.JSONDecodeError:
+                    if req.resume and b"No conversation found" in raw:
+                        raise SessionLost(raw.decode(errors="replace").strip()) from None
                     continue
                 for ev in self._translate(msg):
                     if ev.kind in ("result", "error"):

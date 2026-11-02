@@ -42,16 +42,6 @@ export const WINDOW_LABEL: Record<string, string> = {
   seven_day: "7 günlük pencere",
 };
 
-export const AGENT_LABEL: Record<string, string> = {
-  orchestrator: "Orchestrator",
-  research: "Araştırma",
-  architect: "Mimar",
-  developer: "Geliştirici",
-  qa: "QA",
-  reviewer: "İnceleme",
-  docs: "Dokümantasyon",
-};
-
 /** Short model names for step badges. */
 export const ADAPTER_LABEL: Record<string, string> = {
   claude_code: "Claude",

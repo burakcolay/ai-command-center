@@ -105,6 +105,9 @@ class RunRequest:
     stream_text: bool = False  # emit "delta" events while the answer is being written
     effort: str | None = None  # how hard to think: low | medium | high | xhigh | max
     read_dirs: list[Path] = field(default_factory=list)  # extra folders the model may read
+    output_dir: Path | None = None  # where reports and design files go (also readable)
+    session_id: str | None = None  # start a resumable conversation with this id
+    resume: str | None = None  # continue an earlier conversation
 
 
 EventKind = Literal["text", "delta", "tool", "log", "usage", "result", "error"]
@@ -121,6 +124,10 @@ class AdapterEvent:
 
 class AdapterError(Exception):
     """Raised when a run cannot start or must be aborted (auth, cost guard, crash)."""
+
+
+class SessionLost(AdapterError):
+    """A conversation to resume no longer exists (e.g. after cleanup); start a fresh one."""
 
 
 class QuotaExceeded(AdapterError):

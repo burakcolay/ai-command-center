@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import socket
 import sys
 from contextlib import asynccontextmanager
@@ -8,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from acc import config
-from acc.api import chat_service, orchestrator, router
+from acc.api import chat_service, router
 from acc.db import init_db
 from acc.events import broker
 
@@ -16,10 +18,8 @@ from acc.events import broker
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
-    orchestrator.recover()
     chat_service.recover()
     yield
-    await orchestrator.shutdown()
     await chat_service.shutdown()
 
 
@@ -56,12 +56,22 @@ async def ws(socket: WebSocket):
         return
     await socket.accept()
     q = broker.subscribe()
+
+    async def push() -> None:
+        with contextlib.suppress(Exception):  # the socket closed; the receive loop ends too
+            while True:
+                await socket.send_json(await q.get())
+
+    sender = asyncio.create_task(push())
     try:
-        while True:
-            await socket.send_json(await q.get())
+        # Listen as well: a closed tab or a shutting-down server must end this handler
+        # right away, not at the next event (otherwise Ctrl+C hangs).
+        while (await socket.receive())["type"] != "websocket.disconnect":
+            pass
     except WebSocketDisconnect:
         pass
     finally:
+        sender.cancel()
         broker.unsubscribe(q)
 
 
@@ -80,6 +90,9 @@ if config.WEB_DIST.is_dir():
 
 def _port_free(host: str, port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        # Like uvicorn: a just-stopped Orbit leaves TIME_WAIT sockets behind; only a real
+        # listener should count as busy, so a quick restart works.
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             s.bind((host, port))
         except OSError:

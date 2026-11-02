@@ -1,15 +1,16 @@
+"""Quota: a turn that hits the subscription limit waits and continues by itself."""
+
 import time
-from datetime import timedelta
 
 import pytest
 
+from acc import chat as chat_module
 from acc import notify
-from acc import orchestrator as orch
 from acc.adapters import registry
 from acc.adapters.base import ModelState, QuotaExceeded, RunRequest
 from acc.adapters.claude_code import ClaudeCodeAdapter
 from acc.adapters.mock import MockAdapter
-from tests.test_execution import _project, _wait
+from tests.helpers import chat_state, new_chat, project, send, use, wait_msg
 
 
 def _event(status, resets):
@@ -50,60 +51,64 @@ def test_past_reset_is_not_blocking():
 
 
 class _QuotaOnce(MockAdapter):
-    """First execution step hits the quota; afterwards it works."""
+    """The first turn hits the quota after writing a little; afterwards it works."""
 
     def __init__(self):
         super().__init__(delay=0.01)
         self.hit = False
 
-    async def _step(self, req, run_id):
-        if not self.hit:
+    async def run(self, req, run_id):
+        if not self.hit and req.tools:
             self.hit = True
-            raise QuotaExceeded(int(time.time()) + 2)  # resets ~2 s from now
-        async for ev in super()._step(req, run_id):
+            from acc.adapters.base import AdapterEvent
+
+            yield AdapterEvent("delta", {"text": "Başladım"})
+            raise QuotaExceeded(int(time.time()) + 1)
+        async for ev in super().run(req, run_id):
             yield ev
 
 
 @pytest.fixture
 def quota(monkeypatch):
-    monkeypatch.setattr(orch, "RESUME_MARGIN", timedelta(seconds=0.3))
-    original = registry._adapters
-    registry._adapters = {"mock": _QuotaOnce()}
-    registry._health.clear()
+    monkeypatch.setattr(chat_module, "RESUME_MARGIN_S", 0)
+    original = use(_QuotaOnce())
     yield
     registry._adapters = original
+    registry._health.clear()
 
 
-def test_task_pauses_and_resumes_by_itself(client, quota):
-    p = _project(client)
-    chat = client.post("/api/chats", json={"project_id": p["id"]}).json()
-    task_id = client.post(
-        f"/api/chats/{chat['id']}/messages", json={"content": "x", "project_id": p["id"]}
-    ).json()["task"]["id"]
-    _wait(client, chat["id"], task_id, "waiting_approval", "plan")
-    client.post(f"/api/tasks/{task_id}/decision", json={"decision": "approve"})
-    paused = _wait(client, chat["id"], task_id, "paused")
-    assert paused["resume_at"] and paused["error"] is None
-    logs = [e["data"].get("text", "") for e in client.get(f"/api/tasks/{task_id}/events").json()]
-    assert any("kotası doldu" in t for t in logs)
-    # No click needed: it continues after the reset.
-    done = _wait(client, chat["id"], task_id, "waiting_approval", "merge", timeout=10)
-    assert all(s["status"] == "done" for s in done["steps"])
+def test_a_turn_waits_for_the_reset_and_continues(client, quota):
+    p = project(client)
+    chat_id = new_chat(client, p["id"])
+    msg_id = send(client, chat_id, "Bir satır ekle", p["id"])
+    waiting = wait_msg(client, chat_id, msg_id, "waiting")
+    assert waiting["meta"]["resume_at"] and "kotası doldu" in waiting["content"]
+    assert waiting["content"].startswith("Başladım")  # what was written is kept
+    # A new message while one is waiting is fine; the waiting one continues later.
+    done = wait_msg(client, chat_id, msg_id, "done", timeout=15)
+    assert "ORBIT_DEMO.md" in done["content"] and done["meta"]["task_id"]
 
 
-def test_paused_task_can_be_retried_now(client, quota, monkeypatch):
-    monkeypatch.setattr(orch, "RESUME_MARGIN", timedelta(hours=1))
-    p = _project(client)
-    chat = client.post("/api/chats", json={"project_id": p["id"]}).json()
-    task_id = client.post(
-        f"/api/chats/{chat['id']}/messages", json={"content": "x", "project_id": p["id"]}
-    ).json()["task"]["id"]
-    _wait(client, chat["id"], task_id, "waiting_approval", "plan")
-    client.post(f"/api/tasks/{task_id}/decision", json={"decision": "approve"})
-    _wait(client, chat["id"], task_id, "paused")
-    r = client.post(f"/api/tasks/{task_id}/decision", json={"decision": "retry"})
-    assert r.status_code == 200
-    _wait(client, chat["id"], task_id, "waiting_approval", "merge")
+def test_a_waiting_turn_can_be_retried_now(client, quota, monkeypatch):
+    monkeypatch.setattr(chat_module, "RESUME_MARGIN_S", 3600)
+    chat_id = new_chat(client)
+    msg_id = send(client, chat_id, "Selam")
+    wait_msg(client, chat_id, msg_id, "waiting")
+    assert client.post(f"/api/messages/{msg_id}/resume").status_code == 200
+    wait_msg(client, chat_id, msg_id, "done")
+    assert client.post(f"/api/messages/{msg_id}/resume").status_code == 409
+
+
+def test_a_waiting_turn_can_be_stopped(client, quota, monkeypatch):
+    monkeypatch.setattr(chat_module, "RESUME_MARGIN_S", 3600)
+    chat_id = new_chat(client)
+    msg_id = send(client, chat_id, "Selam")
+    wait_msg(client, chat_id, msg_id, "waiting")
+    assert client.post(f"/api/messages/{msg_id}/cancel").status_code == 200
+    m = wait_msg(client, chat_id, msg_id, "cancelled")
+    assert m["content"].endswith("_(durduruldu)_")
+    assert client.post(f"/api/messages/{msg_id}/resume").status_code == 409
+    assert chat_state(client, chat_id)["messages"][-1]["status"] == "cancelled"
 
 
 async def test_cooldown_blocks_new_runs_until_reset(tmp_path):

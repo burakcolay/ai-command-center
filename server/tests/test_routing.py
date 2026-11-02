@@ -14,7 +14,7 @@ from acc.adapters.base import (
     UsageWindow,
 )
 from acc.adapters.mock import MockAdapter
-from tests.test_execution import _project, _to_review
+from tests.helpers import new_chat, turn
 
 
 def fake(adapter_id: str, caps: Capabilities | None = None, state=ModelState.AVAILABLE, use=None):
@@ -55,84 +55,76 @@ async def _pick(adapters, kind, **kw):
     return await routing.Router(Registry(adapters)).pick(kind, **kw)
 
 
-async def test_only_claude_does_everything_but_summaries_go_local():
+async def test_claude_is_the_assistant_and_summaries_go_local():
     adapters = [fake("claude_code"), fake("ollama", LOCAL)]
-    for kind in ("plan", "chat", "research", "design", "code", "review"):
-        assert (await _pick(adapters, kind)).adapter.info.id == "claude_code", kind
+    assert (await _pick(adapters, "assistant", needs_tools=True)).adapter.info.id == "claude_code"
     assert (await _pick(adapters, "summarize")).adapter.info.id == "ollama"
 
 
-async def test_codex_arrives_and_takes_reviews_without_any_config():
-    adapters = [fake("claude_code"), fake("codex")]
-    assert (await _pick(adapters, "code")).adapter.info.id == "claude_code"
-    assert (await _pick(adapters, "review")).adapter.info.id == "codex"
+async def test_codex_is_the_backup_assistant_without_any_config():
+    adapters = [fake("claude_code", state=ModelState.COOLDOWN), fake("codex")]
+    assert (await _pick(adapters, "assistant", needs_tools=True)).adapter.info.id == "codex"
 
 
-async def test_local_model_never_writes_code():
-    assert (await _pick([fake("ollama", LOCAL)], "code")).adapter is None
+async def test_local_model_is_never_the_assistant():
+    assert (await _pick([fake("ollama", LOCAL)], "assistant", needs_tools=True)).adapter is None
     # Even if it were pinned (bypassing the API's own check), the capability check refuses.
-    prefs.put("routing", {"code": "ollama"})
-    choice = await _pick([fake("ollama", LOCAL)], "code")
+    prefs.put("routing", {"assistant": "ollama"})
+    choice = await _pick([fake("ollama", LOCAL)], "assistant", needs_tools=True)
     assert choice.adapter is None
     assert any("gereken yetenek yok" in s for s in choice.skipped)
 
 
-async def test_second_opinion_avoids_the_author():
+async def test_a_pinned_model_wins():
     adapters = [fake("claude_code"), fake("codex")]
-    prefs.put("routing", {"review": "claude_code"})  # pinned...
-    assert (await _pick(adapters, "review")).adapter.info.id == "claude_code"
-    prefs.put("routing", {})
-    choice = await _pick([fake("codex"), fake("claude_code")], "review", avoid={"codex"})
-    assert choice.adapter.info.id == "claude_code" and "ikinci görüş" in choice.reason
-    # If the author is the only option, it still reviews rather than nothing happening.
-    assert (await _pick([fake("claude_code")], "review", avoid={"claude_code"})).adapter
+    prefs.put("routing", {"assistant": "codex"})
+    choice = await _pick(adapters, "assistant")
+    assert choice.adapter.info.id == "codex" and choice.reason == "elle seçildi"
 
 
 async def test_quota_pressure_moves_work_and_unhealthy_models_are_skipped():
     busy = [fake("claude_code", use=0.95), fake("codex", use=0.2)]
-    choice = await _pick(busy, "code")
+    choice = await _pick(busy, "assistant")
     assert choice.adapter.info.id == "codex" and "kotası %95" in choice.reason
     # Nowhere to go: stay on the busy one rather than stall.
-    assert (await _pick([fake("claude_code", use=0.95)], "code")).adapter.info.id == "claude_code"
+    alone = [fake("claude_code", use=0.95)]
+    assert (await _pick(alone, "assistant")).adapter.info.id == "claude_code"
     down = [fake("claude_code", state=ModelState.COOLDOWN), fake("codex")]
-    assert (await _pick(down, "code")).adapter.info.id == "codex"
+    assert (await _pick(down, "assistant")).adapter.info.id == "codex"
 
 
 async def test_paid_api_is_never_routed_to():
     paid = fake("codex")
     paid.info = replace(paid.info, billing=Billing.PAID_API)
-    choice = await _pick([paid], "code")
+    choice = await _pick([paid], "assistant")
     assert choice.adapter is None and any("ücretli" in s for s in choice.skipped)
 
 
 def test_routing_api(client):
     kinds = {k["id"]: k for k in client.get("/api/routing").json()}
-    assert set(kinds) == set(routing.WORK_KINDS)
-    assert kinds["code"]["current"] == "mock" and kinds["code"]["override"] == "auto"
-    r = client.put("/api/routing/code", json={"adapter": "mock"})
+    assert set(kinds) == {"assistant", "summarize"}
+    assert kinds["assistant"]["current"] == "mock" and kinds["assistant"]["override"] == "auto"
+    r = client.put("/api/routing/assistant", json={"adapter": "mock"})
     assert r.status_code == 200
-    assert {k["id"]: k for k in r.json()}["code"]["override"] == "mock"
-    assert client.put("/api/routing/code", json={"adapter": "yok"}).status_code == 400
+    assert {k["id"]: k for k in r.json()}["assistant"]["override"] == "mock"
+    assert client.put("/api/routing/assistant", json={"adapter": "yok"}).status_code == 400
     assert client.put("/api/routing/uydurma", json={"adapter": "auto"}).status_code == 404
-    agents = {a["id"]: a for a in client.get("/api/agents").json()}
-    assert agents["reviewer"]["work_label"] == "İnceleme ve test"
+    assert client.get("/api/agents").status_code == 404  # no agents or modes any more
 
 
 @pytest.fixture
 def two_models():
     original = registry._adapters
-    registry._adapters = {"claude_code": fake("claude_code"), "codex": fake("codex")}
+    registry._adapters = {
+        "claude_code": fake("claude_code", use=0.97),
+        "codex": fake("codex", use=0.1),
+    }
     registry._health.clear()
     yield
     registry._adapters = original
     registry._health.clear()
 
 
-def test_task_review_step_goes_to_a_different_model(client, two_models):
-    p = _project(client)
-    _, task_id, task = _to_review(client, p)
-    by_agent = {s["agent"]: s["adapter_id"] for s in task["steps"]}
-    assert by_agent["developer"] == "claude_code"
-    assert by_agent["qa"] == "codex"  # independent second pair of eyes
-    logs = [e["data"].get("text", "") for e in client.get(f"/api/tasks/{task_id}/events").json()]
-    assert any("Model: Codex" in t for t in logs)
+def test_a_chat_turn_moves_to_the_backup_when_claude_is_nearly_used_up(client, two_models):
+    chat_id = new_chat(client)
+    assert turn(client, chat_id, "Selam")["adapter_id"] == "codex"

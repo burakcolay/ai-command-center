@@ -1,5 +1,5 @@
 import { Plus, Trash2, X } from "lucide-react";
-import { NAV_GROUPS, type ViewId } from "../lib/nav";
+import { NAV_ITEMS, type ViewId } from "../lib/nav";
 import type { Chat, ModelInfo } from "../lib/types";
 import { OrbitMark } from "./DotMatrix";
 import { ModelDot } from "./StatusDot";
@@ -60,37 +60,33 @@ export function Sidebar(p: Props) {
         </div>
 
         <nav className="mt-4 flex-1 overflow-y-auto px-3 pb-4">
-          {NAV_GROUPS.map((g) => (
-            <div key={g.title} className="mb-4">
-              <div className="label mb-1.5 px-2">{g.title}</div>
-              {g.items.map((it) => {
-                const active = p.view === it.id;
-                const Icon = it.icon;
-                return (
-                  <button
-                    key={it.id}
-                    onClick={() => p.onNavigate(it.id)}
-                    className={`group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors ${
-                      active ? "bg-white/[0.07] text-fg" : "text-dim hover:text-fg"
-                    } ${it.phase ? "opacity-60" : ""}`}
-                  >
-                    <Icon size={14} strokeWidth={1.6} />
-                    <span className="flex-1 text-left">{it.label}</span>
-                    {it.id === "approvals" && p.pendingApprovals > 0 && (
-                      <span className="rounded-full bg-white px-1.5 font-mono text-[10px] leading-4 text-black">
-                        {p.pendingApprovals}
-                      </span>
-                    )}
-                    {it.phase && <span className="font-mono text-[9px] text-faint">{it.phase}</span>}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
+          <div className="mb-4">
+            {NAV_ITEMS.map((it) => {
+              const active = p.view === it.id;
+              const Icon = it.icon;
+              return (
+                <button
+                  key={it.id}
+                  onClick={() => p.onNavigate(it.id)}
+                  className={`group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors ${
+                    active ? "bg-white/[0.07] text-fg" : "text-dim hover:text-fg"
+                  }`}
+                >
+                  <Icon size={14} strokeWidth={1.6} />
+                  <span className="flex-1 text-left">{it.label}</span>
+                  {it.id === "approvals" && p.pendingApprovals > 0 && (
+                    <span className="rounded-full bg-white px-1.5 font-mono text-[10px] leading-4 text-black">
+                      {p.pendingApprovals}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
 
           {p.chats.length > 0 && (
             <div>
-              <div className="label mb-1.5 px-2">Son sohbetler</div>
+              <div className="label mb-1.5 px-2">Sohbetler</div>
               {p.chats.map((c) => (
                 <div
                   key={c.id}

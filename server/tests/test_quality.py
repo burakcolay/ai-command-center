@@ -1,11 +1,16 @@
 import json
-import time
 from pathlib import Path
 
 import pytest
 
 from acc import checks, config
-from tests.test_execution import _project, _to_review, _wait
+from tests.helpers import decide, new_chat, project, task, turn
+
+
+def _to_review(client, p, text="Bir satır ekle"):
+    chat_id = new_chat(client, p["id"])
+    task_id = turn(client, chat_id, text, p["id"])["meta"]["task_id"]
+    return chat_id, task_id, task(client, chat_id, task_id)
 
 
 def test_detect_npm(tmp_path: Path):
@@ -53,7 +58,7 @@ needs_sandbox = pytest.mark.skipif(
 
 @needs_sandbox
 def test_checks_run_in_sandbox_and_show_in_review(client):
-    p = _project(client)
+    p = project(client)
     escape = Path.home() / "orbit-check-escape.txt"
     tmp_escape = Path("/tmp/orbit-check-escape.txt")
     tmp_escape.unlink(missing_ok=True)
@@ -68,8 +73,8 @@ def test_checks_run_in_sandbox_and_show_in_review(client):
             {"name": "geçici dosya", "command": 'python3 -c "import tempfile; tempfile.mkstemp()"'},
         ],
     )
-    _, task_id, task = _to_review(client, p)
-    by_name = {r["name"]: r for r in task["checks"]}
+    _, task_id, t = _to_review(client, p)
+    by_name = {r["name"]: r for r in t["checks"]}
     assert by_name["geçen"]["status"] == "passed" and "tamam" in by_name["geçen"]["output"]
     assert by_name["kaçış denemesi"]["status"] == "failed"
     assert by_name["tmp denemesi"]["status"] == "failed"
@@ -79,42 +84,37 @@ def test_checks_run_in_sandbox_and_show_in_review(client):
 
 
 @needs_sandbox
-def test_fix_checks_adds_revision_and_reruns(client):
-    p = _project(client)
-    # Fails until the demo developer has written the file twice (i.e. after one revision).
+def test_failed_checks_reach_the_next_turn(client, rec):
+    p = project(client)
+    # Fails until the demo assistant has written the file twice.
     _configure(
         client,
         p["id"],
         [{"name": "iki satır", "command": "test $(grep -c Demo ORBIT_DEMO.md) -ge 2"}],
     )
-    chat_id, task_id, task = _to_review(client, p)
-    assert task["checks"][0]["status"] == "failed"
-    r = client.post(f"/api/tasks/{task_id}/decision", json={"decision": "fix_checks"})
-    assert r.status_code == 200, r.text
-    time.sleep(0.1)
-    task = _wait(client, chat_id, task_id, "waiting_approval", "merge")
-    assert task["steps"][-1]["kind"] == "revision"
-    assert "Testleri silme" in task["steps"][-1]["description"]
-    assert task["checks"][0]["status"] == "passed"
-    # Nothing failed now, so asking again is refused.
-    assert (
-        client.post(f"/api/tasks/{task_id}/decision", json={"decision": "fix_checks"}).status_code
-        == 409
-    )
+    chat_id, task_id, t = _to_review(client, p)
+    assert t["checks"][0]["status"] == "failed"
+    # "Fix it" is just another message; the assistant is shown what failed.
+    turn(client, chat_id, "Kontrolleri düzelt, bir satır daha ekle")
+    assert "BAŞARISIZ KONTROLLER" in rec.requests[-1].prompt
+    assert "iki satır" in rec.requests[-1].prompt
+    assert task(client, chat_id, task_id)["checks"][0]["status"] == "passed"
+    turn(client, chat_id, "Teşekkürler")
+    assert "BAŞARISIZ KONTROLLER" not in rec.requests[-1].prompt
 
 
 def test_without_sandbox_nothing_runs(client, monkeypatch, tmp_path):
     monkeypatch.setattr(config, "SRT_BIN", tmp_path / "yok" / "srt")
-    p = _project(client)
+    p = project(client)
     marker = tmp_path / "ran.txt"
     _configure(client, p["id"], [{"name": "yaz", "command": f"echo x > {marker}"}])
-    _, _, task = _to_review(client, p)
-    assert task["checks"][0]["status"] == "skipped"
+    _, _, t = _to_review(client, p)
+    assert t["checks"][0]["status"] == "skipped"
     assert not marker.exists()
 
 
 def test_checks_config_endpoint(client):
-    p = _project(client)
+    p = project(client)
     info = client.get(f"/api/projects/{p['id']}/checks").json()
     assert info["configured"] is None and info["effective"] == info["detected"]
     _configure(client, p["id"], [{"name": "a", "command": "true"}], setup="  ")
@@ -129,9 +129,9 @@ def test_checks_config_endpoint(client):
 
 
 def test_review_has_no_checks_when_none_defined(client):
-    p = _project(client)
-    _, _, task = _to_review(client, p)
-    assert task["checks"] == []
+    p = project(client)
+    _, _, t = _to_review(client, p)
+    assert t["checks"] == []
 
 
 @needs_sandbox
@@ -139,33 +139,29 @@ def test_checks_work_with_long_worktree_paths(client, monkeypatch, tmp_path):
     """Real installs have long paths; srt's own unix sockets must not live under them."""
     deep = tmp_path.joinpath(*["uzun-bir-klasor-adi"] * 6, "worktrees")
     monkeypatch.setattr(config, "WORKTREES_DIR", deep)
-    p = _project(client)
+    p = project(client)
     _configure(
         client,
         p["id"],
         [{"name": "tmp", "command": 'python3 -c "import tempfile; tempfile.mkstemp()"'}],
     )
-    _, _, task = _to_review(client, p)
+    _, _, t = _to_review(client, p)
     assert len(str(deep)) > 120
-    assert task["checks"][0]["status"] == "passed", task["checks"][0]["output"]
+    assert t["checks"][0]["status"] == "passed", t["checks"][0]["output"]
 
 
 @needs_sandbox
-def test_rerun_checks_without_agents(client):
-    p = _project(client)
+def test_rerun_checks_without_a_new_turn(client):
+    p = project(client)
     _configure(client, p["id"], [{"name": "işaret", "command": "test -f HAZIR"}])
-    chat_id, task_id, task = _to_review(client, p)
-    assert task["checks"][0]["status"] == "failed"
+    chat_id, task_id, t = _to_review(client, p)
+    assert t["checks"][0]["status"] == "failed"
     # Fix the check itself (not the code), then run the checks again: no new steps.
     _configure(client, p["id"], [{"name": "işaret", "command": "test -f ORBIT_DEMO.md"}])
-    steps_before = len(task["steps"])
-    assert (
-        client.post(f"/api/tasks/{task_id}/decision", json={"decision": "rerun_checks"}).status_code
-        == 200
-    )
-    time.sleep(0.1)
-    task = _wait(client, chat_id, task_id, "waiting_approval", "merge")
-    assert task["checks"][0]["status"] == "passed"
-    assert len(task["steps"]) == steps_before
+    steps_before = len(t["steps"])
+    assert decide(client, task_id, "rerun_checks").status_code == 200
+    t = task(client, chat_id, task_id)
+    assert t["status"] == "waiting_approval" and t["checks"][0]["status"] == "passed"
+    assert len(t["steps"]) == steps_before
     pending = [a for a in client.get("/api/approvals").json() if a["task_id"] == task_id]
     assert len(pending) == 1  # the old review approval was superseded, not duplicated

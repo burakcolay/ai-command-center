@@ -8,7 +8,7 @@ export type TaskStatus =
   | "failed"
   | "cancelled";
 
-export type Decision = "approve" | "reject" | "request_changes" | "cancel" | "retry" | "fix_checks" | "rerun_checks" | "undo_last";
+export type Decision = "approve" | "reject" | "undo_last" | "rerun_checks";
 
 export interface CheckCommand {
   name: string;
@@ -39,7 +39,6 @@ export interface Template {
   id: string;
   title: string;
   body: string;
-  mode: ComposerMode;
   description: string;
   custom: boolean;
 }
@@ -73,35 +72,24 @@ export interface Chat {
 export interface Message {
   id: number;
   chat_id: number;
+  /** "task" only appears in chats from before Orbit had a single assistant. */
   role: "user" | "assistant" | "task";
   content: string;
-  status: "streaming" | "done" | "error" | "cancelled";
+  status: "streaming" | "done" | "error" | "cancelled" | "waiting";
   adapter_id: string | null;
   meta: {
-    kind?: "research" | "design";
-    report_path?: string;
     attachments?: string[];
+    /** Designs the assistant drew in this turn. */
     variants?: DesignVariant[];
-    viewport?: "phone" | "tablet" | "desktop";
+    /** Reports it wrote, saved as markdown next to project memory. */
+    reports?: string[];
+    /** This turn changed the project: the session (task) holding the change. */
+    task_id?: number;
+    /** Waiting for the quota reset (unix seconds). */
+    resume_at?: number;
   } | null;
   task_id: number | null;
   created_at: string;
-}
-
-export interface PlanStep {
-  id: string;
-  title: string;
-  agent: string;
-  description: string;
-  depends_on: string[];
-  writes_files: boolean;
-}
-
-export interface Plan {
-  title: string;
-  summary: string;
-  steps: PlanStep[];
-  risks: string[];
 }
 
 export type TaskStage = "plan" | "execute" | "merge" | "done";
@@ -113,7 +101,7 @@ export interface TaskStepState {
   title: string;
   agent: string;
   description: string;
-  kind: "plan" | "revision" | "edit";
+  kind: string;
   status: "pending" | "running" | "done" | "failed" | "reverted";
   summary: string | null;
   commit: string | null;
@@ -144,7 +132,6 @@ export interface Task {
   request: string;
   status: TaskStatus;
   kind: "plan" | "session";
-  plan: Plan | null;
   adapter_id: string | null;
   error: string | null;
   stage: TaskStage;
@@ -208,16 +195,6 @@ export interface ModelInfo {
   };
 }
 
-export interface Agent {
-  id: string;
-  name: string;
-  description: string;
-  tools: string[];
-  writes_files: boolean;
-  work: string | null;
-  work_label: string | null;
-}
-
 export interface WorkRoute {
   id: string;
   label: string;
@@ -230,12 +207,11 @@ export interface WorkRoute {
   reason: string;
 }
 
-export type ComposerMode = "chat" | "research" | "design" | "edit" | "task";
-
 export interface DesignVariant {
   n: number;
   title: string;
   idea: string;
+  viewport: "phone" | "tablet" | "desktop";
   image: string | null;
   attachment: string;
 }

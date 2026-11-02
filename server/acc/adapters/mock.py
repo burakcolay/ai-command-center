@@ -1,6 +1,9 @@
-"""Demo adapter: deterministic fake output so the UI can be tried without any login.
+"""Demo adapter: deterministic fake turns so the UI can be tried without any login.
 
-Enabled only with ACC_DEMO=1. Everything it produces is labelled as demo in the UI.
+Enabled only with ACC_DEMO=1 (and in tests). It reacts to words in the user's message the way
+the real assistant reacts to intent: "tasarım" → writes design files, "rapor" → writes a
+report, "değiştir"/"ekle"/"uygula" → edits ORBIT_DEMO.md in the project copy; otherwise it
+just talks.
 """
 
 from __future__ import annotations
@@ -19,6 +22,22 @@ from acc.adapters.base import (
     ModelState,
     RunRequest,
 )
+
+MARKER = "KULLANICININ MESAJI:"
+EDIT_WORDS = ("değiştir", "ekle", "uygula", "düzelt")
+
+
+def _message(prompt: str) -> str:
+    return prompt.rsplit(MARKER, 1)[-1].strip()
+
+
+def _screen(bg: str, fg: str, title: str) -> str:
+    return (
+        f"<!-- başlık: {title} | fikir: Demo: {title.lower()} yaklaşım. | görünüm: phone -->\n"
+        f"<!doctype html><html><body style='margin:0;height:852px;background:{bg};color:{fg};"
+        f"font:600 28px -apple-system,system-ui;display:grid;place-items:center'>{title}"
+        "<script>document.body.style.background='red'</script></body></html>"
+    )
 
 
 class MockAdapter(ModelAdapter):
@@ -50,110 +69,53 @@ class MockAdapter(ModelAdapter):
     async def health_check(self) -> Health:
         return Health(ModelState.AVAILABLE, "Demo modu aktif.")
 
-    async def run(self, req: RunRequest, run_id: str) -> AsyncIterator[AdapterEvent]:
-        if req.stream_text:  # conversation
-            reply = (
-                "Demo yanıtı: mesajını aldım. Gerçek yanıtlar için Claude Code'a giriş yap.\n\n"
-                "- Fikri birlikte netleştirebiliriz\n- Hazır olunca **Göreve dönüştür**"
-            )
-            for i in range(0, len(reply), 24):
-                if run_id in self._cancelled:
-                    raise AdapterError("Çalıştırma iptal edildi.")
-                yield AdapterEvent("delta", {"text": reply[i : i + 24]})
-                await asyncio.sleep(self.delay / 10)
-            yield AdapterEvent("result", {"text": reply})
-            return
-        if req.json_schema and "variants" in req.json_schema.get("properties", {}):
-            yield AdapterEvent("result", {"text": "", "structured": _demo_designs()})
-            return
-        if req.json_schema is None:  # an execution step, not planning
-            async for ev in self._step(req, run_id):
-                yield ev
-            return
-        yield AdapterEvent("log", {"text": "Demo: istek analiz ediliyor"})
-        await asyncio.sleep(self.delay)
-        if run_id in self._cancelled:
-            raise AdapterError("Çalıştırma iptal edildi.")
-        yield AdapterEvent("tool", {"name": "Glob", "input": {"pattern": "**/*"}})
-        await asyncio.sleep(self.delay)
-        request = req.prompt.split("KULLANICI İSTEĞİ:", 1)[-1].strip().splitlines()[0][:80]
-        plan = {
-            "title": request or "Demo görevi",
-            "summary": f"Demo planı: “{request}” isteği üç adıma bölündü.",
-            "steps": [
-                {
-                    "id": "s1",
-                    "title": "Proje yapısını incele",
-                    "agent": "research",
-                    "description": "Dosya yapısı ve bağımlılıklar taranır.",
-                    "depends_on": [],
-                    "writes_files": False,
-                },
-                {
-                    "id": "s2",
-                    "title": "Değişiklikleri uygula",
-                    "agent": "developer",
-                    "description": "Onaydan sonra izole worktree içinde kod değiştirilir.",
-                    "depends_on": ["s1"],
-                    "writes_files": True,
-                },
-                {
-                    "id": "s3",
-                    "title": "Test ve inceleme",
-                    "agent": "qa",
-                    "description": "Lint ve testler çalıştırılır, sonuç raporlanır.",
-                    "depends_on": ["s2"],
-                    "writes_files": False,
-                },
-            ],
-            "risks": ["Bu bir demo planıdır; gerçek analiz yapılmadı."],
-        }
-        yield AdapterEvent("result", {"text": plan["summary"], "structured": plan})
+    async def _say(self, text: str, run_id: str, stream: bool) -> AsyncIterator[AdapterEvent]:
+        for i in range(0, len(text), 24):
+            if run_id in self._cancelled:
+                raise AdapterError("Çalıştırma iptal edildi.")
+            if stream:
+                yield AdapterEvent("delta", {"text": text[i : i + 24]})
+            await asyncio.sleep(self.delay / 10)
 
-    async def _step(self, req: RunRequest, run_id: str) -> AsyncIterator[AdapterEvent]:
-        await asyncio.sleep(self.delay)
-        if run_id in self._cancelled:
-            raise AdapterError("Çalıştırma iptal edildi.")
-        if req.cwd and "Write" in (req.tools or []):
+    async def run(self, req: RunRequest, run_id: str) -> AsyncIterator[AdapterEvent]:
+        if not req.tools:  # summaries and local-only chat
+            text = "Demo özeti: konuşmada alınan kararlar burada özetlenir."
+            async for ev in self._say(text, run_id, req.stream_text):
+                yield ev
+            yield AdapterEvent("result", {"text": text})
+            return
+
+        message = _message(req.prompt).lower()
+        edit = any(w in message for w in EDIT_WORDS)
+        parts = ["Demo yanıtı: mesajını aldım."]
+        if "tasarım" in message and not edit and req.output_dir:
+            screens = [
+                ("#000", "#fff", "Sade"),
+                ("#f4f4f4", "#111", "Kartlı"),
+                ("#0b1f3a", "#e8eef7", "Yoğun"),
+            ]
+            for n, (bg, fg, title) in enumerate(screens, start=1):
+                (req.output_dir / f"tasarim-{n}.html").write_text(_screen(bg, fg, title))
+            yield AdapterEvent("tool", {"name": "Write", "input": {"file_path": "tasarim-1.html"}})
+            parts.append("3 farklı tasarım çizdim.")
+        if "rapor" in message and req.output_dir:
+            (req.output_dir / "rapor-demo.md").write_text(
+                "# Demo raporu\n\n**Kısa cevap:** demo.\n"
+            )
+            parts.append("Raporu kaydettim.")
+        if edit and req.cwd and "Write" in req.tools:
+            await asyncio.sleep(self.delay)
+            if run_id in self._cancelled:
+                raise AdapterError("Çalıştırma iptal edildi.")
             f = req.cwd / "ORBIT_DEMO.md"
             existing = f.read_text() if f.exists() else "# Orbit demo\n\n"
             f.write_text(existing + "Demo adaptörünün yazdığı satır.\n")
-            yield AdapterEvent("tool", {"name": "Write", "input": {"file_path": "ORBIT_DEMO.md"}})
-            yield AdapterEvent("result", {"text": "Demo: ORBIT_DEMO.md güncellendi."})
-        else:
-            yield AdapterEvent("tool", {"name": "Grep", "input": {"pattern": "TODO"}})
-            yield AdapterEvent("result", {"text": "Demo: inceleme tamamlandı, sorun yok."})
+            yield AdapterEvent("tool", {"name": "Edit", "input": {"file_path": "ORBIT_DEMO.md"}})
+            parts.append("ORBIT_DEMO.md dosyasını güncelledim.")
+        text = " ".join(parts) + "\n\n- Demo modunda gerçek bir model çalışmaz."
+        async for ev in self._say(text, run_id, req.stream_text):
+            yield ev
+        yield AdapterEvent("result", {"text": text})
 
     async def cancel(self, run_id: str) -> None:
         self._cancelled.add(run_id)
-
-
-def _demo_designs() -> dict:
-    def screen(bg: str, fg: str, title: str) -> str:
-        return (
-            f"<!doctype html><html><body style='margin:0;height:852px;background:{bg};"
-            f"color:{fg};font:600 28px -apple-system,system-ui;display:grid;place-items:center'>"
-            f"{title}<script>document.body.style.background='red'</script></body></html>"
-        )
-
-    return {
-        "viewport": "phone",
-        "variants": [
-            {
-                "title": "Sade",
-                "idea": "Demo: tek odaklı, bol boşluk.",
-                "html": screen("#000", "#fff", "Sade"),
-            },
-            {
-                "title": "Kartlı",
-                "idea": "Demo: bilgi kartlarla gruplanır.",
-                "html": screen("#f4f4f4", "#111", "Kartlı"),
-            },
-            {
-                "title": "Yoğun",
-                "idea": "Demo: tek bakışta çok bilgi.",
-                "html": screen("#0b1f3a", "#e8eef7", "Yoğun"),
-            },
-        ],
-        "note": "Demo tasarımları.",
-    }

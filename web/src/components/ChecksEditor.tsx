@@ -65,8 +65,8 @@ export function ChecksEditor({
           <div>
             <div className="text-[15px] font-medium text-fg">{project.name} · Kalite kontrolleri</div>
             <p className="mt-1 text-[12.5px] leading-relaxed text-dim">
-              Ajanlar işini bitirince Orbit bu komutları sandbox içinde kendisi çalıştırır; sonuç
-              diff'in yanında gösterilir. Komutlar yalnızca görevin kopyasına yazabilir ve
+              Asistan bir değişiklik yapınca Orbit bu komutları sandbox içinde kendisi çalıştırır;
+              sonuç diff'in yanında gösterilir. Komutlar yalnızca projenin kopyasına yazabilir ve
               internete yalnızca paket depoları üzerinden çıkabilir.
             </p>
           </div>
@@ -122,7 +122,7 @@ export function ChecksEditor({
                 </div>
               ))}
               {draft.commands.length === 0 && (
-                <p className="text-[12.5px] text-dim">Kontrol yok; görevler kontrolsüz incelemeye gelir.</p>
+                <p className="text-[12.5px] text-dim">Kontrol yok; değişiklikler kontrolsüz incelemeye gelir.</p>
               )}
               <button
                 onClick={() => setDraft((d) => ({ ...d, commands: [...d.commands, { name: "", command: "" }] }))}

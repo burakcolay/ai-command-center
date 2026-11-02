@@ -1,6 +1,6 @@
 # Orbit — AI Komuta Merkezi
 
-Kişisel, local-first AI ajan orkestrasyon ortamı. Adı çalışma şeklinden geliyor: uzman ajanlar merkezdeki Orchestrator'ın yörüngesinde çalışır. Doğal dille görev verirsiniz; Orchestrator bir plan çıkarır, siz onaylarsınız, ajanlar kontrollü şekilde çalışır.
+Kişisel, local-first AI asistanı. Tek bir sohbet var; ne istediğinizi düz yazarsınız. Asistan sohbet eder, araştırır, tasarım çizer ya da projenizde değişiklik yapar. Değişiklikler projenin izole bir kopyasında yapılır ve siz birleştirene kadar gerçek projenize dokunmaz.
 
 **Maliyet ilkesi:** Mevcut Claude ve ChatGPT abonelikleri dışında hiçbir ücret oluşmaz. Ücretli API kullanımı kod seviyesinde kapalıdır. Ayrıntılar için [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) belgesine bakın.
 
@@ -33,74 +33,73 @@ Ardından tarayıcıda http://127.0.0.1:7420 adresini açın.
 Port 7420 doluysa başka bir port seçin (örnek: `make start PORT=7500`). Sunucu her zaman yalnızca `127.0.0.1` üzerinde dinler; dışarıdan erişilemez.
 
 - `make dev`: geliştirme modu (Vite hot-reload: http://127.0.0.1:5173)
-- `make demo`: Claude Code olmadan, sahte planlarla arayüzü deneme
+- `make demo`: Claude Code olmadan, sahte yanıtlarla arayüzü deneme
 - `make test`: backend testleri ve frontend typecheck
 
 ## Nasıl kullanılır
 
-Yazma kutusunda beş mod vardır: **Sohbet**, **Araştırma**, **Tasarım**, **Düzenle** ve **Görev**.
+Mod yok, ayrı ekran yok. Ne istediğinizi yazın; asistan mesajdan ne yapması gerektiğini anlar.
 
-- **Tasarım:** "Bu ekranı beğenmedim, 3 alternatif" gibi istekler için.
-  - Birbirinden gerçekten farklı 2-3 ekran çizilir ve görselleri yan yana gösterilir.
-  - "2'nin düzeni, 1'in renkleri" gibi yeni turlar istenebilir.
-  - **Bunu uygula**, seçilen tasarımı referans olarak Düzenle moduna aktarır.
-  - Tasarımlar internet erişimi ve JavaScript kapalı bir tarayıcıda çizilir.
-- **Görsel ekleme:** Ataç butonu, yapıştırma (⌘V) veya sürükle-bırak ile ekran görüntüsü eklenebilir; her modda Claude görseli okur.
+| Yazdığınız | Olan |
+| --- | --- |
+| "Aklımda bir uygulama fikri var…" | Sohbet eder, soru sorar, gerekçeli öneri verir. |
+| "Habit tracker'ların en büyük şikayetleri neler, araştır" | Onlarca kaynağı tarar. Kapsamlı bir araştırmaysa kaynakçalı raporu `Araştırmalar/` klasörüne markdown olarak kaydeder, sohbette özetini verir. |
+| "Giriş ekranı için 3 farklı tasarım" | Birbirinden farklı ekranlar çizer, görselleri yan yana gösterir. "2'nin düzeni, 1'in renkleri" gibi yeni turlar isteyebilirsiniz. |
+| "Başlığı büyüt", "hata mesajlarını Türkçeleştir" | Projenin bir kopyasında hemen yapar. |
+| Büyük, çok dosyalı bir iş | Önce kısa bir plan yazar ve onayınızı ister; "tamam" deyince uygular. |
 
-- **Düzenle:** Küçük değişiklikler için. Plan ve onay adımı yoktur; her mesaj projenin izole bir kopyasında hemen uygulanır, kalite kontrolleri çalışır ve diff önüne gelir. Mesaj yazdıkça aynı oturuma yeni adımlar eklenir. **Son değişikliği geri al**, **Birleştir** ve **Hepsini at** butonları vardır.
+**Proje seçimi:** Yazma kutusundaki proje seçicisinden bir proje seçerseniz asistan kodunuzu okuyabilir ve değişiklik yapabilir. Proje seçmezseniz yalnızca sohbet, araştırma ve tasarım yapar.
 
-- **Araştırma:** Bir pazar, rakip ya da teknoloji sorusu için onlarca kaynağı tarar ve rakamları karşılaştırır. Kaynakçalı bir rapor yazar: rakip tablosu, fırsatlar, net öneri ve MVP. Rapor `Araştırmalar/` klasörüne markdown olarak kaydedilir. Birkaç dakika sürer.
-- **Model ve düşünme:** **Ayarlar**'dan kalite (Ekonomik / Dengeli / En iyi) ve model (Varsayılan / Sonnet / Opus / Fable) seçilir. Daha yüksek kalite daha derin düşünür ama kotayı daha hızlı harcar.
+**Değişiklik kartı:** Bir mesaj projede bir şeyi değiştirdiğinde sohbette bir kart çıkar. Kartta yapılan değişiklikler, kalite kontrolleri ve diff görünür. Kartın butonları:
+- **Birleştir:** Değişiklikleri projenize alır.
+- **Son değişikliği geri al:** Yalnızca son mesajın yaptığı değişikliği geri alır.
+- **Hepsini at:** Kopyadaki tüm değişiklikleri siler.
 
-1. **Sohbet modunda konuşun.** Fikrinizi anlatın, soru sorun, seçenekleri tartışın. Proje seçtiyseniz asistan kodunuzu okuyarak konuşur. Bu modda hiçbir dosya değişmez.
-2. **Karar netleşince "Göreve dönüştür"e basın.** Orchestrator tüm konuşmayı okuyup bir plan çıkarır. Planı onaylar, değiştirtir ya da reddedersiniz.
-3. **Ajanlar izole bir kopyada çalışır.** Bitince diff'i inceler, **Birleştir**, **Değişiklik iste** veya **Reddet** seçersiniz.
+Sohbete yazmaya devam ettikçe değişiklikler aynı kopyada birikir.
 
-Kısa ve net işler için doğrudan **Görev** moduna geçip yazabilirsiniz. İyi bir görev tarifi şunları içerir:
-- ne istendiği,
-- kapsamın sınırı (ne yapılmayacağı),
-- "bitti" sayılma ölçütü, örneğin "testler geçsin".
+**Tasarımı uygulama:** Bir tasarımın altındaki **Bunu uygula** butonu, o tasarımı (görsel ve HTML) ekleyerek mesajı hazırlar. Siz gönderirsiniz. Tasarımlar internet erişimi ve JavaScript kapalı bir tarayıcıda çizilir.
 
-## İş dağılımı (model yönlendirici)
+**Görsel ekleme:** Ataç butonu, yapıştırma (⌘V) veya sürükle-bırak ile ekran görüntüsü eklenebilir. Asistan görseli okur.
 
-Her iş bir türe ayrılır: planlama, sohbet, araştırma, tasarım, kod yazma, inceleme/test ve özetleme. Her türün varsayılan bir model sırası vardır.
+**Hafıza:** Asistan aynı sohbetteki konuşmayı hatırlar. Çok uzun sohbetlerin eski kısımları özetlenir; özetleme varsa ücretsiz yerel modelle yapılır.
+
+**Model ve düşünme:** **Ayarlar**'dan kalite (Ekonomik / Dengeli / En iyi) ve model (Varsayılan / Sonnet / Opus / Fable) seçilir. Daha yüksek kalite daha derin düşünür ama kotayı daha hızlı harcar.
+
+## Model seçimi
+
+Asistan Claude Code ile çalışır. **Model Yöneticisi → İş dağılımı**'nda o an hangi modelin çalıştığı ve nedeni görünür. Model elle de sabitlenebilir.
 
 **Seçim kuralları:**
-- Gereken yeteneği olmayan model atlanır; örneğin yerel model asla kod yazmaz.
 - Sağlıksız, kotası dolmuş veya ücretli API gerektiren model atlanır.
-- Kotası %90'ı geçmiş bir model, uygun alternatif varsa yükü ona devreder.
-- İnceleme işleri, kodu yazan modelden farklı bir modele gider (ikinci göz).
-
-**Bugünkü dağılım ve Codex:** Bugün özetleme yerel modelde, diğer her şey Claude'da. Codex eklendiğinde ayar gerekmeden inceleme işlerini almaya başlar.
-
-**Elle müdahale:** **Model Yöneticisi → İş dağılımı**'nda her iş türü için o an seçilen model ve nedeni görünür; istersen elle sabitleyebilirsin. Her görev adımında hangi modelin çalıştığı da yazar.
+- Claude'un kotası %90'ı geçerse ve başka bir abonelik modeli (ör. Codex) eklenmişse iş ona geçer.
+- Claude hiç kullanılamıyorsa yerel model (Ollama) sohbeti sürdürür. Yerel model dosya okuyamaz ve değişiklik yapamaz.
 
 ## Kalite kontrolleri
 
-Ajanlar işini bitirince ORBIT projenizin test, lint ve tip kontrolü komutlarını **kendisi** çalıştırır ve sonucu diff'in yanında gösterir. Böylece "testler geçti" bilgisi bir modelin iddiası değil, ölçülmüş bir sonuç olur.
+Asistan projede bir değişiklik yapınca ORBIT projenizin test, lint ve tip kontrolü komutlarını **kendisi** çalıştırır ve sonucu diff'in yanında gösterir. Böylece "testler geçti" bilgisi bir modelin iddiası değil, ölçülmüş bir sonuç olur.
 - **Komut seçimi:** npm, Python (uv veya requirements) ve Makefile projelerinde komutlar otomatik algılanır. **Projeler → Kontroller**'den değiştirilebilir.
-- **Sandbox:** Komutlar `sandbox-runtime` içinde çalışır; yalnızca görevin kopyasına yazabilir ve internete yalnızca paket depoları üzerinden çıkabilir. Sandbox kurulu değilse komutlar hiç çalıştırılmaz.
-- **Başarısız kontrol:** **Ajana düzelttir** hata çıktısıyla bir düzeltme adımı ekler. **Yeniden çalıştır** ajan çalıştırmadan kontrolleri tekrarlar.
+- **Sandbox:** Komutlar `sandbox-runtime` içinde çalışır; yalnızca projenin kopyasına yazabilir ve internete yalnızca paket depoları üzerinden çıkabilir. Sandbox kurulu değilse komutlar hiç çalıştırılmaz.
+- **Başarısız kontrol:** Asistan bir sonraki mesajda hata çıktısını görür; "düzelt" demeniz yeter. **Düzeltmesini iste** bu mesajı sizin için hazırlar. **Yeniden çalıştır** asistanı çalıştırmadan kontrolleri tekrarlar.
 
 ## Kota, bildirimler, şablonlar
 
-- **Kota dolunca:** Görev hata vermez, "Kota bekleniyor" durumuna geçer ve kota sıfırlandığında kendiliğinden devam eder. İsterseniz **Şimdi dene** ile hemen deneyebilirsiniz. Ücretli kullanıma hiçbir durumda geçilmez.
-- **Bildirimler:** Plan hazır, inceleme hazır, kota doldu veya görev başarısız olduğunda macOS bildirimi gelir. **Ayarlar**'dan kapatılıp test edilebilir.
+- **Kota dolunca:** Yanıt hata vermez, bekler ve kota sıfırlandığında kendiliğinden devam eder. İsterseniz **Şimdi dene** ile hemen deneyebilirsiniz. Ücretli kullanıma hiçbir durumda geçilmez.
+- **Bildirimler:** Uzun süren bir yanıt (araştırma, büyük değişiklik) bittiğinde veya kota dolduğunda macOS bildirimi gelir. **Ayarlar**'dan kapatılıp test edilebilir.
 - **Şablonlar:** Yazma kutusundaki şablon butonu ya da kutunun başına `/` yazmak hazır istekleri açar (test ekle, hata düzelt, güvenlik incelemesi …). Yazdığınız bir metni şablon olarak kaydedebilirsiniz.
 
 ## Güvenlik
 
 - **Ağ:** Sunucu yalnızca `127.0.0.1`'de dinler. Başka sitelerden gelen istekler (CSRF) ve sahte host adları (DNS rebinding) reddedilir.
-- **Gizli dosyalar:** Ajanlar `.env`, `*.pem`, `*.key`, `*.p8` gibi dosyaları okuyamaz. Komut çalıştıranlar `~/.ssh`, `~/.aws`, `~/.claude` gibi klasörleri ve ORBIT'in kendi veritabanını göremez.
+- **Gizli dosyalar:** Asistan `.env`, `*.pem`, `*.key`, `*.p8` gibi dosyaları okuyamaz. Çalıştırdığı komutlar sandbox içindedir; `~/.ssh`, `~/.aws`, `~/.claude` gibi klasörleri ve ORBIT'in kendi veritabanını göremez, projenin kopyası dışına yazamaz.
 - **Repo ayarları:** Repo içindeki `.claude/settings.json` dikkate alınmaz; bir repo kendi hook'larıyla komut çalıştıramaz.
 - **Loglar:** Token, anahtar ve şifre benzeri değerler kaydedilmeden önce `[gizli]` olarak maskelenir. `data/` klasörü yalnızca sizin kullanıcınız tarafından okunabilir.
 - **Git:** Veritabanı, loglar, hafıza ve çalışma kopyaları `.gitignore`'dadır; GitHub'a gitmez.
 
 ## Proje Hafızası
 
-Her projenin, ORBIT'in her sohbete, plana ve ajana verdiği bir hafıza dosyası vardır. Açmak için **Projeler → Hafıza**.
+Her projenin, asistana her mesajda verilen bir hafıza dosyası vardır. Açmak için **Projeler → Hafıza**.
 - **Notlar:** Kalıcı kararları buraya yazın, örneğin "arayüz Türkçe", "SwiftUI kullan", "yeni bağımlılık ekleme".
-- **Karar Günlüğü:** Birleştirilen her görev buraya otomatik olarak eklenir.
+- **Karar Günlüğü:** Birleştirilen her değişiklik buraya otomatik olarak eklenir.
 
 Dosyalar düz markdown'dır. Obsidian kullanıyorsanız klasörü kasanızın içine taşıyıp notları orada görebilir ve bağlayabilirsiniz:
 
@@ -110,7 +109,7 @@ make start MEMORY_DIR=~/Documents/Obsidian/Orbit
 
 ## Yerel modeller (Ollama, isteğe bağlı)
 
-Ücretsizdir ve kota harcamaz. Sohbette model seçiciden **Yerel** seçilebilir. Uzun sohbetlerin özetlenmesi de varsa yerel modelle yapılır. Yerel modeller dosya okuyamaz ve kod yazamaz; o işler Claude'da kalır.
+Ücretsizdir ve kota harcamaz. Uzun sohbetlerin özetlenmesi varsa yerel modelle yapılır. Claude kullanılamıyorsa sohbeti yerel model sürdürür. Yerel modeller dosya okuyamaz ve kod yazamaz; o işler Claude'da kalır.
 
 Kurun ve başlatın:
 
@@ -136,9 +135,10 @@ ORBIT'te **Model Yöneticisi → Kontrol et**'e basın, Ollama "Kullanılabilir"
 ```
 server/acc/       FastAPI backend
   adapters/       Model sağlayıcıları (her biri ayrı modül)
-  orchestrator.py Plan üretimi ve onay durum makinesi
+  assistant.py    Tek asistanın talimatı ve araçları
+  chat.py         Sohbet turu: model seçimi, oturum, çıktılar
+  sessions.py     Sohbetteki değişiklikler: kopya, commit, kontroller, birleştirme
   cost_guard.py   Ücretli kullanım engelleri
-  agents.py       Uzman ajan tanımları
 web/src/          React arayüzü
 docs/             Mimari kararlar
 ```

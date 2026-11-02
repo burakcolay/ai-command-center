@@ -221,9 +221,9 @@ function WorkRouting({ onError }: { onError: (msg: string) => void }) {
     <>
       <div className="label mt-10 mb-1">İş dağılımı</div>
       <p className="mb-2 text-[12.5px] leading-relaxed text-dim">
-        Her iş türü için o an hangi modelin çalışacağı. "Otomatik"te sağlığı, kotası ve yeteneği
-        uygun ilk model seçilir; inceleme işleri kodu yazandan farklı bir modele gider. Yeni bir
-        model (ör. Codex) eklendiğinde kendi işlerini otomatik alır.
+        Asistanın o an hangi modelle çalışacağı. "Otomatik"te sağlığı, kotası ve yeteneği uygun ilk
+        model seçilir; Claude'un kotası dolmak üzereyse ve başka bir model (ör. Codex) eklenmişse
+        iş ona geçer. Uzun sohbetlerin özeti ücretsiz yerel modelle çıkarılır.
       </p>
       <div className="divide-y divide-line overflow-hidden rounded-xl border border-line">
         {routes === null && <div className="bg-panel px-4 py-3 font-mono text-[11px] text-faint">yükleniyor…</div>}

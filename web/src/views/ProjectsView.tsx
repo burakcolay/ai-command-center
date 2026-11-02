@@ -46,7 +46,7 @@ export function ProjectsView({ projects, onChanged, onOpen, onError }: Props) {
   return (
     <Page
       title="Projeler"
-      subtitle="Her proje ayrı bir klasör. Ajanlar yalnızca görevin projesine erişir."
+      subtitle="Her proje ayrı bir klasör. Asistan yalnızca sohbette seçili projeye, onun bir kopyasında erişir."
       action={
         !adding && (
           <button
@@ -118,7 +118,7 @@ export function ProjectsView({ projects, onChanged, onOpen, onError }: Props) {
               <button
                 onClick={() => setMemoryFor(p)}
                 className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2 py-1 font-mono text-[10.5px] text-dim hover:border-white/30 hover:text-fg"
-                title="Proje hafızası: her ajana verilen kalıcı kararlar ve kurallar"
+                title="Proje hafızası: asistana her mesajda verilen kalıcı kararlar ve kurallar"
               >
                 <BookMarked size={11} /> Hafıza
               </button>

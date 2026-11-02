@@ -4,12 +4,10 @@ import { OrbitMark } from "./components/DotMatrix";
 import { Sidebar } from "./components/Sidebar";
 import { useSocket } from "./hooks/useSocket";
 import { api } from "./lib/api";
-import { NAV_ITEMS, type ViewId } from "./lib/nav";
+import type { ViewId } from "./lib/nav";
 import type {
-  Agent,
   Approval,
   Chat,
-  ComposerMode,
   Message,
   ModelInfo,
   Project,
@@ -20,7 +18,7 @@ import type {
 } from "./lib/types";
 import { ChatView, activityText } from "./views/ChatView";
 import { ModelsView } from "./views/ModelsView";
-import { AgentsView, ApprovalsView, ComingSoon, SettingsView } from "./views/OtherViews";
+import { ApprovalsView, SettingsView } from "./views/OtherViews";
 import { ProjectsView } from "./views/ProjectsView";
 
 export default function App() {
@@ -33,13 +31,10 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<number | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [mode, setMode] = useState<ComposerMode>("chat");
-  const [chatModel, setChatModel] = useState<string | null>(null);
   const [activity, setActivity] = useState<Record<number, string>>({});
   const chatIdRef = useRef(chatId);
   chatIdRef.current = chatId;
@@ -77,7 +72,6 @@ export default function App() {
 
   useEffect(() => {
     loadAll();
-    api.agents().then(setAgents).catch(() => {});
     api.system().then(setSystem).catch(() => {});
   }, [loadAll]);
 
@@ -118,10 +112,6 @@ export default function App() {
   }, []);
 
   const send = async (text: string, attachments: string[] = []) => {
-    if (mode === "edit" && projectId === null) {
-      showError("Düzenleme için önce bir proje seç.");
-      throw new Error("no project");
-    }
     try {
       let id = chatId;
       if (id === null) {
@@ -129,10 +119,8 @@ export default function App() {
         setChatId(id);
         setMessages([]);
       }
-      const r = await api.send(id, text, projectId, mode, chatModel, attachments);
+      const r = await api.send(id, text, projectId, attachments);
       setMessages((prev) => [...prev, ...r.messages.filter((x) => !prev.some((y) => y.id === x.id))]);
-      const task = r.task;
-      if (task) setTasks((prev) => ({ ...prev, [task.id]: task }));
       void loadChats();
     } catch (e) {
       showError((e as Error).message);
@@ -142,6 +130,10 @@ export default function App() {
 
   const stop = (messageId: number) => {
     api.cancelMessage(messageId).catch((e) => showError(e.message));
+  };
+
+  const resume = (messageId: number) => {
+    api.resumeMessage(messageId).catch((e) => showError(e.message));
   };
 
   const newChat = () => {
@@ -163,13 +155,6 @@ export default function App() {
     if (v === "approvals") void loadApprovals();
     if (v === "models") void loadModels();
   };
-
-  const navItem = NAV_ITEMS.find((n) => n.id === view);
-  const ollama = models.find((m) => m.id === "ollama" && m.state === "available");
-  const chatModels = [
-    { id: null, label: "Claude" },
-    ...(ollama ? [{ id: "ollama", label: `Yerel · ${ollama.data.selected}` }] : []),
-  ];
 
   return (
     <div className="flex h-full">
@@ -205,16 +190,12 @@ export default function App() {
               events={events}
               projects={projects}
               projectId={projectId}
-              mode={mode}
-              chatModels={chatModels}
-              chatModel={ollama ? chatModel : null}
-              onChatModelChange={setChatModel}
               activity={activity}
               demoMode={system?.demo_mode ?? false}
-              onModeChange={setMode}
               onProjectChange={setProjectId}
               onSend={send}
               onStop={stop}
+              onResume={resume}
               onLoadEvents={loadEvents}
               onError={showError}
             />
@@ -236,7 +217,6 @@ export default function App() {
               onOpenTask={(id) => void openChat(id).catch((e) => showError(e.message))}
             />
           )}
-          {view === "agents" && <AgentsView agents={agents} />}
           {view === "models" && (
             <ModelsView models={models} onRefresh={() => loadModels(true)} onError={showError} />
           )}
@@ -254,7 +234,6 @@ export default function App() {
               }}
             />
           )}
-          {navItem?.phase && <ComingSoon item={navItem} />}
         </div>
 
         {toast && (

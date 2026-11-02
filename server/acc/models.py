@@ -69,6 +69,8 @@ class Chat(Base):
     # Rolling summary of older messages, so long chats don't resend everything each turn.
     summary: Mapped[str | None] = mapped_column(Text)
     summary_until: Mapped[int | None] = mapped_column()  # last message id folded into summary
+    # The assistant's own conversation id (Claude Code session), resumed on every turn.
+    claude_session: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -131,7 +133,7 @@ class Message(Base):
     chat_id: Mapped[int] = mapped_column(ForeignKey("chats.id", ondelete="CASCADE"))
     role: Mapped[str] = mapped_column(String(16))  # user | assistant | task
     content: Mapped[str] = mapped_column(Text)
-    # assistant replies: streaming -> done | error | cancelled
+    # assistant replies: streaming -> done | error | cancelled | waiting (for quota reset)
     status: Mapped[str] = mapped_column(String(16), default="done", server_default="done")
     adapter_id: Mapped[str | None] = mapped_column(String(64))  # who wrote an assistant reply
     # e.g. {"kind": "research", "report_path": "..."}

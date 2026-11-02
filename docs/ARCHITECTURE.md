@@ -17,8 +17,8 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 | FastAPI, SQLite, React, Playwright, gh, git, Obsidian, MCP | Ücretsiz | Açık kaynak veya ücretsiz araçlar |
 
 **Gerçekçi sınırlar:**
-- Asıl darboğaz **abonelik limitleri**dir. Claude Pro'nun 5 saatlik ve haftalık pencereleri var. Sistem bunları ölçer ve gösterir. Limit dolunca görev bekler; ücretli API'ye geçmez.
-- Mac uykudayken görevler durur. Bulut veya 7/24 çalışma kapsam dışıdır.
+- Asıl darboğaz **abonelik limitleri**dir. Claude Pro'nun 5 saatlik ve haftalık pencereleri var. Sistem bunları ölçer ve gösterir. Limit dolunca yanıt bekler; ücretli API'ye geçmez.
+- Mac uykudayken çalışma durur. Bulut veya 7/24 çalışma kapsam dışıdır.
 - App Store Connect işlemleri için zaten Apple Developer üyeliği gerekir. Bu sistemin getirdiği bir maliyet değildir.
 
 ### Maliyet koruması (kodda uygulanır, prompt'a bırakılmaz)
@@ -40,48 +40,51 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 | UI bileşenleri | Elle yazılmış, az sayıda | shadcn/ui gerektiğinde bileşen bazında eklenecek. |
 | Backend | FastAPI + SQLAlchemy 2 + SQLite (WAL) | Dokümandaki gibi. |
 | Kuyruk | SQLite + asyncio | Redis/Celery gerekmez. |
-| Orchestrator beyni | Claude Code (`--json-schema` ile yapılandırılmış plan) | 16 GB'da yerel modeller planlama için zayıf. |
-| Karar mantığı | Deterministik Python | Durum geçişleri, izinler ve maliyet kuralları AI'ya bırakılmaz. |
-| Ajanlar | Konfigürasyon (`server/acc/agents.py`) | Rol, araç listesi ve model tercihi. Ayrı süreç değil. |
+| Asistan | Tek bir Claude Code oturumu (`assistant.py`, `chat.py`) | Kullanıcı mod seçmez; niyeti model anlar. 16 GB'da yerel modeller bu iş için zayıf. |
+| Karar mantığı | Deterministik Python | İzinler, izole kopya, birleştirme ve maliyet kuralları AI'ya bırakılmaz. |
 | Arayüz dili | Türkçe | Kullanıcı tercihi. |
 | Tasarım | Siyah-beyaz, nokta deseni, nokta-matris tipografi | Tek vurgu rengi beyaz; kırmızı yalnızca hatalar için. |
 
 ## 3. Güvenlik modeli
 
 - Sunucu yalnızca `127.0.0.1` adresinde dinler. `Host` başlığı localhost olmayan istekler reddedilir (DNS rebinding koruması). WebSocket'te `Origin` kontrol edilir.
-- **İzin kontrolü CLI seviyesinde yapılır.** Ajanın araç listesi `--tools` ve `--allowedTools` ile, izin modu `--permission-mode dontAsk` ile verilir. Örneğin Orchestrator yalnızca `Read`, `Glob` ve `Grep` kullanabilir.
-- **Asıl kontrol noktası merge'dür.** Her görev `data/worktrees/task-N` altında, `orbit/task-N` branch'inde ayrı bir git worktree'de çalışır. Kullanıcının çalışma klasörüne yalnızca onaylanan bir birleştirme dokunur.
-- **Bash kullanan ajanlar** (Geliştirici, QA) Claude Code'un işletim sistemi seviyesindeki sandbox'ında çalışır (`agents.SANDBOX_SETTINGS`):
-  - Yalnızca worktree'ye yazabilirler.
-  - `~/.ssh`, `~/.aws`, `~/.config/gh` gibi kimlik bilgisi klasörlerini okuyamazlar.
-  - Ağ erişimleri yalnızca paket kayıtlarıyla (npm, PyPI) sınırlıdır.
+- **İzin kontrolü CLI seviyesinde yapılır.** Araç listesi `--tools` ve `--allowedTools` ile, izin modu `--permission-mode dontAsk` ile verilir. Asistanın araçları nerede çalıştığına göre koddan gelir (`assistant.py`):
+  - Proje seçili ve git deposuysa: okuma, yazma, Bash ve web, hepsi projenin izole kopyasında.
+  - Proje git deposu değilse: yalnızca okuma ve web (salt okunur).
+  - Proje yoksa: okuma, web ve sohbete özel bir çalışma klasörüne yazma; Bash yok.
+- **Asıl kontrol noktası merge'dür.** Proje seçili her sohbet `data/worktrees/chat-N` altında, `orbit/task-M` branch'inde ayrı bir git worktree'de çalışır. Kullanıcının çalışma klasörüne yalnızca onaylanan bir birleştirme dokunur.
+- **Bash** her zaman Claude Code'un işletim sistemi seviyesindeki sandbox'ında çalışır (`security.claude_sandbox_settings`):
+  - Yalnızca worktree'ye yazabilir.
+  - `~/.ssh`, `~/.aws`, `~/.config/gh` gibi kimlik bilgisi klasörlerini okuyamaz.
+  - Ağ erişimi yalnızca paket kayıtlarıyla (npm, PyPI) sınırlıdır.
   - `failIfUnavailable: true`: sandbox başlayamazsa komut hiç çalışmaz. Bu hem kapalı hem açık durumda test edildi.
-- **Salt okunur ajanlar** (QA, İnceleme, Araştırma, Mimar) dosya değiştirirse Orbit bu değişiklikleri adım sonunda otomatik geri alır ve günlüğe yazar.
-- **Git işlemlerini her zaman Orbit yapar.** Ajanlar commit, merge veya push yapmaz. Derleme ve test çöpleri (`__pycache__`, `node_modules`, `.pytest_cache` …) proje `.gitignore`'u olmasa bile commit'lere girmez.
+- **Git işlemlerini her zaman Orbit yapar.** Asistan commit, merge veya push yapmaz; her tur sonunda Orbit commit'ler. Derleme ve test çöpleri (`__pycache__`, `node_modules`, `.pytest_cache` …) proje `.gitignore`'u olmasa bile commit'lere girmez.
 - **Repodaki `.claude/settings.json` güvenilmez veridir.** Claude Code `--setting-sources user` ile başlatılır; böylece bir repo kendi hook'larıyla komut çalıştıramaz.
-- Proje dosyaları, web sayfaları ve skill'ler güvenilmeyen veri sayılır. Planlayıcı sistem prompt'u bunu belirtir. Daha önemlisi, izinler zaten koddadır; prompt değiştirse bile araç listesi değişmez.
+- Proje dosyaları, görseller, web sayfaları ve skill'ler güvenilmeyen veri sayılır. Asistanın sistem prompt'u bunu belirtir. Daha önemlisi, izinler zaten koddadır; prompt değiştirse bile araç listesi değişmez.
 - Bir proje uygulamadan kaldırıldığında diskteki dosyalar silinmez.
 - **Gizli dosyalar** (`security.SECRET_FILE_GLOBS`): Her Claude çalıştırmasına `permissions.deny` olarak `Read(**/.env)`, `Read(**/*.p8)` gibi kurallar verilir. Claude Code bu kuralları sandbox içindeki shell komutlarına da uygular; doğrulandı: `cat .env` reddedildi, `.env.example` okunabiliyor.
 - **Kimlik bilgisi klasörleri** (`security.CREDENTIAL_DIRS`) ve ORBIT'in kendi veritabanı sandbox'taki her komuttan gizlidir.
 - **CSRF:** Tarayıcının `Origin` ya da `Sec-Fetch-Site: cross-site` başlığıyla işaretlediği yabancı istekler 403 alır.
-- **Log maskeleme:** Görev olayları, adım özetleri, audit kayıtları ve kontrol çıktıları kaydedilmeden önce `security.redact`'tan geçer.
-- **Alt süreç ortamı:** Faturalama anahtarları ve ORBIT'in kendi Python sanal ortamı (`VIRTUAL_ENV`, `PATH` girdisi) alt süreçlere aktarılmaz. Böylece ajanın `python`'u projenin Python'u olur.
+- **Log maskeleme:** Değişiklik günlüğü, canlı araç etkinliği ve kontrol çıktıları kaydedilmeden ya da gösterilmeden önce `security.redact`'tan geçer.
+- **Alt süreç ortamı:** Faturalama anahtarları ve ORBIT'in kendi Python sanal ortamı (`VIRTUAL_ENV`, `PATH` girdisi) alt süreçlere aktarılmaz. Böylece asistanın `python`'u projenin Python'u olur.
 
 ## 4. Model yönlendirici (`routing.py`)
 
-**İş türleri ve sıraları:**
-- Her ajan bir iş türüne bağlıdır (`AGENT_WORK`); her türün varsayılan model sırası ve gereken yetenekleri vardır (`WORK_KINDS`).
-- Sıralarda henüz kurulu olmayan adaptörler de (`codex`) yer alır. Adaptör kaydedildiği an devreye girer, Orchestrator'a dokunulmaz.
+**İki iş türü vardır (`WORK_KINDS`):**
+- `assistant`: kullanıcının her mesajı. Sıra: Claude Code → Codex. Araç, kod ve web yeteneği gerekir.
+- `summarize`: uzun sohbet özetleri ve Claude kullanılamadığında yedek sohbet. Sıra: Ollama → Claude Code.
+
+Sıralarda henüz kurulu olmayan adaptörler de (`codex`) yer alır. Adaptör kaydedildiği an devreye girer.
 
 **Seçim kuralları (`Router.pick`):**
-- Yetenek kontrolü yapılır.
+- Yetenek kontrolü yapılır; yerel model asla asistan olmaz.
 - Maliyet koruması uygulanır.
 - Model sağlıklı olmalıdır; cooldown durumundakiler atlanır.
 - **Kota baskısı:** Doğrulanmış kullanımı %90'ı geçen modelin yerine, uygun alternatif varsa o seçilir.
-- **İkinci görüş:** İnceleme işleri, görevde kodu yazan modelden farklı bir modeli tercih eder.
 - **Kullanıcı sabitlemesi:** `prefs.routing`. API, yeteneği olmayan bir modelin sabitlenmesini reddeder; yönlendirici de sabitlenmiş olsa bile yetenek kontrolünü uygular.
+- Asistan için uygun model yoksa sohbeti `summarize` sırasındaki model (ör. Ollama) araçsız sürdürür ve bunu yanıtın başında söyler.
 
-**Şeffaflık:** Seçilen model ve nedeni görev günlüğüne yazılır; adımın `adapter_id`'si arayüzde gösterilir.
+**Şeffaflık:** Mesajın `adapter_id`'si kaydedilir; Model Yöneticisi o an seçilen modeli ve nedenini gösterir.
 
 ## 4b. Adaptör sözleşmesi
 
@@ -95,7 +98,7 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 | execute_task + get_result | `run()`: async event akışı; son event `result` veya `error` |
 | cancel_task | `cancel()` |
 
-**Yeni sağlayıcı eklemek** için `adapters/` altına bir modül yazılır ve `build_registry()` içine bir satır eklenir. Orchestrator'a dokunulmaz.
+**Yeni sağlayıcı eklemek** için `adapters/` altına bir modül yazılır ve `build_registry()` içine bir satır eklenir. Sohbet koduna dokunulmaz.
 
 ### Claude Code: doğrulanmış davranış (CLI 2.1.x)
 
@@ -104,129 +107,113 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 - `rate_limit_event.rate_limit_info.unifiedWindows.{five_hour,seven_day}.utilization` alanları **gerçek** limit kullanımını verir.
 - `result.structured_output` alanı `--json-schema` ile doğrulanmış çıktıyı içerir.
 - `result.total_cost_usd` abonelikte temsili bir değerdir; harcama olarak gösterilmez.
+- `--session-id <uuid>` yeni bir konuşma başlatır, `--resume <uuid>` sürdürür. Bilinmeyen bir kimlikle sürdürmek "No conversation found" yazar; adaptör bunu `SessionLost` olarak bildirir.
+- `--add-dir` ile verilen klasörler (yüklemeler, çıktı klasörü) çalışma klasörü dışında okunup yazılabilir.
 
 ## 5. Kalite kapıları, kota ve bildirimler
 
-- **Kalite kapıları** (`checks.py`): Adımlar bittikten sonra projenin komutları ORBIT tarafından `sandbox-runtime` (`tools/`) içinde çalıştırılır.
+- **Kalite kapıları** (`checks.py`): Bir tur projede değişiklik yaptıktan sonra projenin komutları ORBIT tarafından `sandbox-runtime` (`tools/`) içinde çalıştırılır.
   - Sandbox kuralları: yazma yalnızca worktree'ye; `TMPDIR` worktree içinde; ağ yalnızca npm/PyPI; araç önbellekleri `.orbit-cache`'te.
   - `srt` yoksa komutlar "atlandı" olarak işaretlenir, korumasız çalıştırılmaz.
-  - Ajanın değiştirdiği bir test betiği güvenilmez koddur; bu yüzden sandbox şarttır.
-  - Sonuç `tasks.checks`'e yazılır. `fix_checks` kararı hata çıktısıyla bir düzeltme adımı ekler ("testleri silme/atlama" kuralıyla); `rerun_checks` yalnızca kontrolleri tekrarlar.
+  - Asistanın değiştirdiği bir test betiği güvenilmez koddur; bu yüzden sandbox şarttır.
+  - Sonuç `tasks.checks`'e yazılır. Başarısız kontrollerin çıktısı bir sonraki turun prompt'una eklenir ("testleri silerek geçirme" kuralıyla); kullanıcının "düzelt" demesi yeter. `rerun_checks` yalnızca kontrolleri tekrarlar.
   - Not: `srt`'nin kendi soketleri sistemin geçici klasöründe kalır. Unix soket yolu ~104 karakterle sınırlı olduğundan `TMPDIR` yalnızca sandbox içindeki komuta verilir.
 - **Kota** (`QuotaExceeded`):
-  - `rate_limit_event.status == "rejected"` olunca görev `paused` olur; `resume_at` sıfırlanma + 1 dk'dır.
-  - Zamanlayıcı görevi kaldığı adımdan sürdürür; sunucu yeniden başlarsa zamanlayıcı yeniden kurulur.
-  - `allowed_warning` yalnızca günlüğe uyarı düşer. Ücretli geçiş yoktur.
-- **Bildirimler** (`notify.py`): macOS'ta `osascript`. Başlık ve gövde AppleScript koduna gömülmez, argüman olarak verilir; böylece bir görev başlığı komut enjekte edemez.
+  - `rate_limit_event.status == "rejected"` olunca yanıt `waiting` olur; yazılmış kısmı korunur, `meta.resume_at` sıfırlanma + 1 dk'dır.
+  - Zamanlayıcı aynı turu yeniden çalıştırır; sunucu yeniden başlarsa zamanlayıcı yeniden kurulur. "Şimdi dene" beklemeyi atlar.
+  - `allowed_warning` yalnızca bilgi amaçlıdır. Ücretli geçiş yoktur.
+- **Bildirimler** (`notify.py`): macOS'ta `osascript`. Başlık ve gövde AppleScript koduna gömülmez, argüman olarak verilir; böylece bir mesaj komut enjekte edemez. 45 saniyeden uzun süren yanıtlar ve kota beklemesi bildirilir.
 - **Şablonlar** (`templates.py` + `templates` tablosu): Hazır istekler kodda, kullanıcı şablonları veritabanında.
 
-## 6. Sohbet, araştırma ve görev modları
+## 6. Tek sohbet, tek asistan
 
-**Düşünme seviyesi ve model:**
-- Her Claude çalıştırmasına `--effort` verilir; seviye işin türüne ve kullanıcının kalite tercihine göre seçilir (`agents.EFFORT`).
-  - Dengeli: sohbet, planlama ve adımlar `high`; araştırma `xhigh`.
-  - Ekonomik: hepsi `medium`; araştırma `high`.
-  - En iyi: hepsi `xhigh`; araştırma `max`.
-- Model tercihi `--model` ile geçer; "Varsayılan" seçiliyse aboneliğin seçtiği model kullanılır.
+Kullanıcı mod seçmez. Her mesaj bir **turdur** (`ChatService._reply`). Asistan mesajdan ne istendiğini anlar: cevap verir, araştırır, tasarım çizer ya da projede değişiklik yapar. Talimat `assistant.SYSTEM`'dedir; Orbit ise çevreyi hazırlar ve sonuçları incelenebilir hale getirir.
 
-**Sohbet asistanının talimatı:**
-- Kısa ya da belirsiz cevapları bağlamdan yorumlar ve ilerler.
-- Seçenek sıralamak yerine gerekçeli öneri yapar.
-- Rakamları kaynakla verir, doğrulayamadığını "tahmini" diye işaretler.
-- Gerçek kullanıcı konuşmasıyla karşılaştırıldı: eski talimat her adımda soru soruyor, kaynaksız rakam veriyordu.
+**Bir tur:**
+1. Model seçilir (`router.pick("assistant")`).
+2. Çalışma yeri belirlenir: projenin izole kopyası (`sessions.workspace`), salt okunur proje ya da sohbete özel klasör.
+3. Turun çıktı klasörü açılır: `data/outputs/<mesaj>`.
+4. Prompt kurulur: proje hafızası, kalite kontrol komutları, başarısız kontroller, çıktı klasörü, önceki tasarımlar, ekler, gerekirse geçmiş ve kullanıcının mesajı.
+5. Claude Code çalışır, yanıt parça parça akar.
+6. Çıktılar toplanır: çıktı klasöründeki HTML'ler tasarım olarak çizilir (`meta.variants`), markdown'lar rapor olarak kaydedilir (`meta.reports`).
+7. Projede değişiklik olduysa commit'lenir, kontroller çalışır ve değişiklik kartı güncellenir (`meta.task_id`).
 
-**Araştırma modu (`RESEARCH_SYSTEM`):**
-- Soruyu alt sorulara böler, en az 12 arama yapar, önemli sayfaları açıp okur ve rakamları karşılaştırır.
-- Rapor yapısı: Kısa cevap / Bulgular / Rakipler tablosu / Fırsatlar / Öneri + MVP / Riskler / Kaynaklar.
-- Rapor `MEMORY_DIR/Araştırmalar/` altına kaydedilir.
-- Ölçülen gerçek bir çalıştırma: ~8 dakika, 5 saatlik kotanın ~%5'i, 43 kaynak linki.
+**Konuşma hafızası:**
+- Claude Code kendi oturumunu tutar: ilk tur `--session-id`, sonrakiler `--resume` ile (`chats.claude_session`). Geçmiş her turda yeniden gönderilmez; kota korunur.
+- Oturum kaybolursa (`SessionLost`) ya da başka bir model yanıtlıyorsa geçmiş metin olarak gönderilir: en yeni 150 bin karakter, eskisi kayan özete katlanır (`chats.summary`). Özeti önce yerel model çıkarır.
+- Proje değişince sohbetin Claude oturumu sıfırlanır (çalışma klasörü değişir).
 
-### Görseller ve tasarım varyantları
+**Düşünme seviyesi ve model:** Her çalıştırmaya `--effort` verilir (`assistant.EFFORT`): Ekonomik `medium`, Dengeli `high`, En iyi `xhigh`. Model tercihi `--model` ile geçer; "Varsayılan" seçiliyse aboneliğin seçtiği model kullanılır.
+
+**Talimatın ana kuralları:**
+- Kısa ya da belirsiz cevapları bağlamdan yorumlar ve ilerler; seçenek sıralamak yerine gerekçeli öneri yapar.
+- Rakamları kaynakla verir, doğrulayamadığını "tahmini" diye işaretler, uydurmaz.
+- Araştırma: alt sorular, 10-12+ arama, birincil kaynaklar. Kapsamlıysa rapor (Kısa cevap / Bulgular / Rakipler / Fırsatlar / Öneri + MVP / Riskler / Kaynaklar) çıktı klasörüne yazılır ve `MEMORY_DIR/Araştırmalar/` altına kaydedilir.
+- Küçük değişiklikleri hemen yapar; büyük, çok dosyalı işlerde önce kısa plan yazıp onay ister.
+
+### Görseller ve tasarımlar
 
 - **Yüklemeler** (`attachments.py`):
   - Dosya türü uzantıdan değil ilk baytlardan belirlenir; yalnızca PNG, JPEG, WebP ve GIF kabul edilir, en fazla 10 MB.
   - Görseller `data/uploads/` klasörüne kaydedilir.
   - Ek kimliği ya 32 karakterlik hex bir dosya kimliğidir ya da `design:<mesaj>:<n>` biçimindedir; bu ikisi dışındaki her şey reddedilir, bu da yol geçişini (path traversal) engeller.
   - Modele yalnızca dosya yolları ve `--add-dir` (okuma) verilir.
-- **Tasarım modu** (`designs.py`):
-  - Model, şemaya uygun JSON olarak 2-4 bağımsız HTML ekran döndürür; dosya yazma yetkisi yoktur, yalnızca okuma araçları vardır.
+- **Tasarımlar** (`designs.py`):
+  - Asistan her ekranı çıktı klasörüne bağımsız bir HTML olarak yazar. İlk satırdaki `<!-- başlık: … | fikir: … | görünüm: phone -->` yorumu başlığı, fikri ve ekran boyutunu verir.
   - ORBIT bu HTML'leri Playwright Chromium'da çizer. Sayfada JavaScript kapalıdır ve tüm ağ istekleri reddedilir. Arayüz yalnızca PNG'leri gösterir.
   - Önceki turların HTML'leri sonraki tura okunabilir olarak verilir; böylece "2'nin düzeni, 1'in renkleri" çalışır.
-  - "Bunu uygula", varyantın PNG'sini ve HTML'ini düzenleme oturumuna ek olarak geçirir.
+  - "Bunu uygula", tasarımın PNG'sini ve HTML'ini ek olarak yeni bir mesaja koyar.
 
-### Düzenleme oturumu (`tasks.kind = "session"`)
+### Sohbetteki değişiklikler (`sessions.py`, `tasks.kind = "session"`)
 
-- **Akış:** Planlama yoktur. Sohbetteki her "Düzenle" mesajı açık oturuma bir `edit` adımı ekler (`Orchestrator.add_edit`). Ardından adımlar, kontroller ve inceleme aynı yürütme motoruyla yapılır.
-- **Yürütme sırasında gelen mesajlar:** Yürütme döngüsü bekleyen adım kalmayana kadar döner; arada gelen düzenleme incelemeden önce uygulanır.
-- **Geri alma:** `undo_last`, en son commit'li adımı worktree'de `reset --hard <commit>~1` ile düşürür ve adımı `reverted` yapar. Geri alınan adım tekrar deneme veya kota sonrası devamda yeniden çalışmaz (`SETTLED`).
-- **Oturum yaşam süresi:** Fark kalmasa da oturum açık kalır. Birleştirme veya "Hepsini at" ile kapanır; bir sonraki düzenleme yeni oturum açar.
-- **Kurulum önbelleği:** Kontrollerin kurulum adımı, komut ve bağımlılık dosyaları değişmedikçe aynı worktree'de bir kez çalışır (`.orbit-cache/setup.done`). Kontrol sonrası temizlik önbellekleri ve kurulu bağımlılıkları silmez.
-- **Ajan bilgisi:** Ajanlara projenin kalite kontrol komutları da verilir; işlerini aynı komutla doğrulayabilirler.
-
-### Sohbet ve görev
-
-
-Kullanıcı ORBIT'e iki şekilde yazar:
-
-| Mod | Ne olur | Dosya değişir mi? |
-|---|---|---|
-| **Sohbet** (varsayılan) | Sohbet asistanı yanıt verir; yanıt parça parça akar. Proje seçiliyse kodu okuyabilir (Read/Glob/Grep), web'de araştırma yapabilir. | Hayır. Yazma araçları hiç verilmez. |
-| **Görev** | Orchestrator plan çıkarır → onay → yürütme → inceleme → birleştirme. | Yalnızca onaylı birleştirmeyle. |
-
-- **Bağlam aktarımı:** Görev modunda gönderilen her mesaj, o sohbetteki konuşmanın bir anlık görüntüsünü (`tasks.context`) yanında taşır. Orchestrator planı bu konuşmadan çıkarır; her ajan adımı da konuşmanın son 60 bin karakterini görür. "Göreve dönüştür" butonu, kutuyu Görev moduna alıp "Sohbette kararlaştırdıklarımızı uygula." yazar.
-- **Sağlayıcıdan bağımsız:** Konuşma her turda metin olarak yeniden gönderilir (en yeni 150 bin karakter; tek mesaj en fazla 100 bin karakter, uzun bir MVP belgesi rahatça sığar). Codex ve Ollama da aynı şekilde çalışabilir.
-- **Kurallar:** Proje yoksa asistanın yalnızca web araçları vardır. Durdurulan yanıtın yazılmış kısmı korunur. Bir yanıt yazılırken aynı sohbete ikinci mesaj gönderilemez.
-
-### Bağlam ve kota yönetimi
-
-- **Ajan adımları birbirinden bağımsızdır.** Her adım yeni bir oturumdur; adımlar arasında yalnızca kısa özetler taşınır. Bu yüzden uzun görevlerde context birikmez. Tek bir adımın içinde Claude Code kendi otomatik sıkıştırmasını kullanır.
-- **Sohbet özetleme:** Özetlenmemiş geçmiş 30 bin karakteri geçince, en yeni 6 mesaj dışındakiler kayan bir özete katlanır (`chats.summary`, `chats.summary_until`). Sonraki turlar özeti ve son mesajları gönderir. Özeti önce yerel model (Ollama) çıkarır; yoksa Claude'a düşer. Amaç taşmayı önlemekten çok her turda tüm geçmişi tekrar gönderip kota harcamamaktır.
-- **Görev bağlamı:** Göreve dönüşen sohbet, sığıyorsa tam metniyle, sığmıyorsa özet + son mesajlarla aktarılır.
+- **Kopya:** Proje seçili sohbetin ilk turunda bir oturum (task) ve worktree açılır. Sadece konuşulan sohbette değişiklik oluşmaz ve kart görünmez.
+- **Commit:** Dosya değiştiren her tur bir commit ve bir adım (`task_steps`, `kind = "edit"`) olur. Ardından kontroller çalışır ve birleştirme onayı açılır.
+- **Kararlar:** `approve` (birleştir), `undo_last` (son turu `reset --hard <commit>~1` ile geri al), `reject` (hepsini at), `rerun_checks`. Asistan çalışırken karar verilemez.
+- **Ömür:** Birleştirme veya "Hepsini at" ile kapanır; sonraki değişiklik yeni bir oturum açar. Değişiklik içermeyen oturum, proje değiştirilince sessizce kapanır. Sohbet ya da proje silinince kopya ve branch temizlenir; kullanıcının projesine dokunulmaz.
+- **Kurulum önbelleği:** Kontrollerin kurulum adımı, komut ve bağımlılık dosyaları değişmedikçe aynı worktree'de bir kez çalışır (`.orbit-cache/setup.done`).
 
 ### Proje Hafızası
 
 - **Dosya:** Proje başına bir markdown dosyası (`MEMORY_DIR/<Proje>.md`, varsayılan `data/memory`).
-- **Kullanım:** Her sohbete, plana ve ajan adımına en fazla 12 bin karakteri eklenir. Uzunsa elle yazılmış baş kısmı ve en yeni günlük kayıtları korunur.
-- **Karar Günlüğü:** Her birleştirmede görev numarası, başlık, plan özetinin ilk cümlesi, değişen dosyalar ve commit otomatik eklenir. Ek model çağrısı yapılmaz.
+- **Kullanım:** Her tura en fazla 12 bin karakteri eklenir. Uzunsa elle yazılmış baş kısmı ve en yeni günlük kayıtları korunur.
+- **Karar Günlüğü:** Her birleştirmede birleştirilen isteklerin özeti ve commit otomatik eklenir. Ek model çağrısı yapılmaz.
 - **Obsidian:** Zorunlu değil. Dosyalar düz markdown olduğu için `MEMORY_DIR` bir Obsidian kasasının içini gösterebilir; eklenti veya API gerekmez. Operasyonel durum SQLite'ta kalır, kalıcı bilgi markdown'dadır.
 
 ## 7. Veri modeli (SQLite)
 
-`projects` (kontrol ayarı dahil), `chats` (kayan özet dahil), `messages`, `tasks`, `task_steps`, `preferences` (yürütme adımları ve özetleri), `task_events` (yalnızca ekleme yapılan günlük ve canlı akış), `approvals`, `audit_logs`, `templates`.
+`projects` (kontrol ayarı dahil), `chats` (kayan özet ve Claude oturumu dahil), `messages` (`meta`: ekler, tasarımlar, raporlar, değişiklik oturumu, kota bekleme), `tasks` (sohbetteki değişiklik oturumları), `task_steps` (tur başına bir commit), `task_events` (yalnızca ekleme yapılan günlük), `approvals`, `audit_logs`, `templates`, `preferences`.
 
 **Şema geçişi:** `db._add_missing_columns` yalnızca ekleme yapar; yeni sütunları mevcut veritabanına `ALTER TABLE ADD COLUMN` ile ekler. Eski veritabanları sürüm güncellemelerinde bozulmaz.
 
 Dokümandaki diğer tablolar (`model_usage`, `skill_registry`, `mcp_connections` …) ilgili faz geldiğinde eklenecek.
 
-## 8. Görev yaşam döngüsü
+## 8. Yaşam döngüleri
 
-Görevin bir `stage` alanı (plan → execute → merge → done) ve bir `status` alanı vardır:
+**Mesaj:** `streaming` → `done` | `error` | `cancelled` | `waiting` (kota) → `streaming` (otomatik ya da "Şimdi dene").
+
+**Değişiklik oturumu:**
 
 ```
-[plan]    planning ──► waiting_approval ──approve──► queued
-                         ├─request_changes──► planning (yeniden plan)
-                         └─reject──► cancelled
-[execute] queued ──► running ──(adım adım, her adım bir commit)──► waiting_approval [merge]
-                       └──(hata)──► failed ──retry──► kaldığı adımdan devam
-[merge]   waiting_approval ──approve──► git merge --no-ff ──► completed (worktree + branch silinir)
-                         ├─request_changes──► "Geri bildirimi uygula" adımı eklenir ──► queued
-                         └─reject──► cancelled (worktree + branch silinir)
-Her aktif durumdan cancel ──► cancelled
+tur başlar ──► running ──(tur biter: commit + kontroller)──► waiting_approval
+waiting_approval ──yeni tur──► running
+waiting_approval ──undo_last──► waiting_approval (son tur geri alındı)
+waiting_approval ──approve──► git merge --no-ff ──► completed (worktree + branch silinir)
+waiting_approval ──reject──► cancelled (worktree + branch silinir)
 ```
 
-- **Birleştirme güvenliği:** Birleştirme yalnızca görevin başladığı branch açıkken yapılır. Çakışma olursa `merge --abort` ile geri alınır ve onay beklemede kalır.
-- **Kaldığı yerden devam:** Her adım ayrı bir commit olduğu için checkpoint görevi görür. Sunucu yeniden başlarsa kuyruktaki görevler devam eder; yarıda kalanlar "Kaldığı yerden devam et" ile tamamlanmamış adımdan sürdürülür.
-- **Eşzamanlılık:** Aynı anda en fazla `MAX_PARALLEL_TASKS = 1` görev yürütülür. Bu, RAM ve abonelik kotası için bilinçli bir seçim.
+- **Birleştirme güvenliği:** Birleştirme yalnızca oturumun başladığı branch açıkken yapılır. Çakışma olursa `merge --abort` ile geri alınır ve onay beklemede kalır.
+- **Yeniden başlatma:** Sunucu yeniden başlarsa yarıda kalan yanıtlar hata olarak işaretlenir, çalışır görünen oturumlar incelemeye döner, kota bekleyen yanıtların zamanlayıcısı yeniden kurulur.
+- **Eşzamanlılık:** Bir sohbette aynı anda tek yanıt yazılır.
 
 ## 9. Yol haritası durumu
 
 - [x] **Faz 1 — Temel:** iskelet, SQLite, sohbet, projeler, loglar, WebSocket
 - [x] **Adaptör arayüzü + Claude Code adaptörü + maliyet koruması**
-- [x] **Orchestrator v0:** plan üretimi, onay, değişiklik talebi, red, iptal, tekrar deneme
-- [x] **Yürütme motoru:** git worktree, adım adım ajanlar, sandbox, diff ekranı, değişiklik isteme, birleştirme onayı, kaldığı yerden devam
-- [x] **Sohbet modu:** akışlı yanıtlar, proje okuma, web araştırması, sohbetten göreve bağlam aktarımı
+- [x] **Tek sohbet, tek asistan:** mod yok; sohbet, araştırma, tasarım ve değişiklik aynı akışta (eski Orchestrator, ajanlar ve modlar kaldırıldı)
+- [x] **İzole kopyada değişiklik:** git worktree, tur başına commit, sandbox, diff, geri alma, birleştirme
+- [x] **Claude oturum sürekliliği:** `--resume`, kaybolursa geçmişten yeniden kurulum
 - [x] **Proje Hafızası + otomatik karar günlüğü** (Obsidian uyumlu düz markdown)
-- [x] **Ollama adaptörü:** sohbet ve özetleme; dosya araçları yok, ajan adımlarına asla atanmaz
+- [x] **Ollama adaptörü:** özetleme ve yedek sohbet; dosya araçları yok, asla değişiklik yapmaz
 - [x] **Uzun sohbet özetleme** (önce yerel model)
 - [ ] **Codex adaptörü:** ChatGPT aboneliği alındığında; CLI davranışı o zaman gerçek hesapla doğrulanacak
 - [x] **Kalite kapıları** (sandbox'ta, ORBIT'in kendisi çalıştırır)
@@ -234,10 +221,8 @@ Her aktif durumdan cancel ──► cancelled
 - [x] **macOS bildirimleri**
 - [x] **Şablonlar** (hazır ve kullanıcı)
 - [x] **Güvenlik sertleştirmesi:** CSRF, gizli dosya erişimi, log maskeleme, özel veri klasörü, temiz alt süreç ortamı
-- [x] **Düzenleme oturumu** (hızlı değişiklik, geri alma, birleştirme)
 - [x] **Görsel ekleme + tasarım varyantları**
-- [x] **Model yönlendirici** (iş türüne göre seçim, kota baskısı, ikinci görüş, elle sabitleme)
-- [ ] **Sıradaki adaylar:** Codex adaptörü (abonelik alınınca); GitHub entegrasyonu; iOS simülatör ekran görüntüsü; Discussion Room
-- [ ] **Diğer adaylar:** GitHub entegrasyonu (Faz 4: branch, PR hazırlama — push/merge onaylı); web projeleri için görsel önizleme
+- [x] **Model yönlendirici** (kota baskısı, sağlık, elle sabitleme)
+- [ ] **Sıradaki adaylar:** GitHub entegrasyonu (branch, PR hazırlama; push/merge onaylı); iOS simülatör ekran görüntüsü; web projeleri için görsel önizleme
 - [ ] Grok Build adaptörü (ücretsiz erişim doğrulanırsa)
 - [ ] Faz 4–8: dokümandaki sırayla

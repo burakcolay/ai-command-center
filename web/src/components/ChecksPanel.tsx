@@ -2,7 +2,7 @@ import { Check, ChevronRight, Minus, ShieldCheck, X } from "lucide-react";
 import { useState } from "react";
 import type { CheckResult } from "../lib/types";
 
-/** Quality-gate results: measured by Orbit in the sandbox, not reported by an agent. */
+/** Quality-gate results: measured by Orbit in the sandbox, not reported by the assistant. */
 export function ChecksPanel({
   results,
   onFix,
@@ -30,7 +30,7 @@ export function ChecksPanel({
             onClick={onRerun}
             disabled={busy}
             className="ml-auto font-mono text-[11px] text-dim hover:text-fg disabled:opacity-30"
-            title="Ajan çalıştırmadan kontrolleri tekrar çalıştır (ör. kontrol ayarını değiştirdikten sonra)"
+            title="Asistanı çalıştırmadan kontrolleri tekrar çalıştır (ör. kontrol ayarını değiştirdikten sonra)"
           >
             Yeniden çalıştır
           </button>
@@ -40,9 +40,9 @@ export function ChecksPanel({
             onClick={onFix}
             disabled={busy}
             className="rounded-md border border-line-strong px-2.5 py-0.5 font-mono text-[11px] text-fg hover:border-white/40 disabled:opacity-30"
-            title="Hata çıktısıyla bir düzeltme adımı ekler; testler yeniden çalışır"
+            title="Asistandan düzeltmesini iste; hata çıktısını kendisi görür"
           >
-            Ajana düzelttir
+            Düzeltmesini iste
           </button>
         )}
       </div>

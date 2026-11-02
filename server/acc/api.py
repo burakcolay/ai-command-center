@@ -1,6 +1,7 @@
 import base64
 import binascii
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Literal
@@ -19,13 +20,12 @@ from acc import (
     memory,
     notify,
     prefs,
-    routing,
     serialize,
+    sessions,
     templates,
 )
 from acc.adapters import registry
-from acc.agents import AGENTS
-from acc.chat import ChatService, context_for_task
+from acc.chat import ChatService
 from acc.db import session
 from acc.models import (
     Approval,
@@ -37,15 +37,14 @@ from acc.models import (
     Task,
     TaskEvent,
     TaskKind,
-    TaskStage,
-    TaskStatus,
     Template,
 )
-from acc.orchestrator import Decision, ExecError, InvalidTransition, Orchestrator
+from acc.routing import WORK_KINDS, Router, overrides
+from acc.sessions import InvalidTransition
 
 router = APIRouter(prefix="/api")
-orchestrator = Orchestrator(registry)
 chat_service = ChatService(registry)
+model_router = Router(registry)
 
 
 # ---------- projects ----------
@@ -177,13 +176,22 @@ def put_checks(project_id: int, body: ChecksIn):
 
 
 @router.delete("/projects/{project_id}", status_code=204)
-def delete_project(project_id: int):
+async def delete_project(project_id: int):
     """Removes the project from the app only. Files on disk are never deleted."""
     with session() as s:
-        p = s.get(Project, project_id)
-        if p is None:
+        if s.get(Project, project_id) is None:
             raise HTTPException(404)
-        s.delete(p)
+        open_ids = s.scalars(
+            select(Task.id).where(
+                Task.project_id == project_id,
+                Task.kind == TaskKind.SESSION,
+                Task.status.not_in(sessions.OPEN),
+            )
+        ).all()
+    for task_id in open_ids:  # unmerged copies of this project go with it
+        await sessions.close(task_id)
+    with session() as s:
+        s.delete(s.get(Project, project_id))
         s.add(AuditLog(actor="user", action="project.remove", target=f"project:{project_id}"))
 
 
@@ -197,11 +205,7 @@ class ChatIn(BaseModel):
 class MessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=100_000)  # long specs can be pasted
     project_id: int | None = None
-    # chat: talk it through (nothing changes) · task: plan → approve → execute
-    mode: Literal["chat", "task", "research", "edit", "design"] = "task"
     attachments: list[str] = Field(default_factory=list, max_length=6)
-    # chat only: which model answers (None = default, Claude). e.g. "ollama"
-    model: str | None = Field(default=None, max_length=64)
 
 
 @router.get("/chats")
@@ -236,34 +240,49 @@ def get_chat(chat_id: int):
 
 
 @router.delete("/chats/{chat_id}", status_code=204)
-def delete_chat(chat_id: int):
+async def delete_chat(chat_id: int):
+    """Deletes the chat and its unmerged changes. The user's project is never touched."""
     with session() as s:
-        c = s.get(Chat, chat_id)
-        if c is None:
+        if s.get(Chat, chat_id) is None:
             raise HTTPException(404)
-        s.delete(c)
+        if s.scalar(
+            select(Message.id).where(Message.chat_id == chat_id, Message.status == "streaming")
+        ):
+            raise HTTPException(409, "Yanıt yazılırken sohbet silinemez; önce durdur.")
+    if (task_id := sessions.open_session_id(chat_id)) is not None:
+        await sessions.close(task_id)
+    with session() as s:
+        s.delete(s.get(Chat, chat_id))
+    shutil.rmtree(config.DATA_DIR / "chats" / str(chat_id), ignore_errors=True)
 
 
 @router.post("/chats/{chat_id}/messages", status_code=201)
 async def post_message(chat_id: int, body: MessageIn):
+    """Every message is a turn for the one assistant; it decides what the message asks for."""
     content = body.content.strip()
+    for attachment_id in body.attachments:
+        try:
+            attachments.resolve(attachment_id)
+        except attachments.AttachmentError as e:
+            raise HTTPException(400, str(e)) from None
     with session() as s:
         c = s.get(Chat, chat_id)
         if c is None:
             raise HTTPException(404)
-        if body.project_id is not None:
-            if s.get(Project, body.project_id) is None:
-                raise HTTPException(400, "Proje bulunamadı.")
-            c.project_id = body.project_id
-        for attachment_id in body.attachments:
-            try:
-                attachments.resolve(attachment_id)
-            except attachments.AttachmentError as e:
-                raise HTTPException(400, str(e)) from None
-        if body.mode in ("chat", "research", "design") and s.scalar(
+        switching = body.project_id is not None and body.project_id != c.project_id
+        if switching and s.get(Project, body.project_id) is None:
+            raise HTTPException(400, "Proje bulunamadı.")
+    if switching and not await sessions.close_if_empty(chat_id):
+        raise HTTPException(409, "Bu sohbette bekleyen değişiklikler var; önce birleştir ya da at.")
+    with session() as s:
+        c = s.get(Chat, chat_id)
+        if s.scalar(
             select(Message.id).where(Message.chat_id == chat_id, Message.status == "streaming")
         ):
             raise HTTPException(409, "Önceki yanıt hâlâ yazılıyor.")
+        if switching:
+            c.project_id = body.project_id
+            c.claude_session = None  # a different working folder needs a fresh conversation
         if c.title == "Yeni sohbet":
             c.title = content[:60]
         user_msg = Message(
@@ -272,95 +291,14 @@ async def post_message(chat_id: int, body: MessageIn):
             content=content,
             meta={"attachments": body.attachments} if body.attachments else None,
         )
-        s.add(user_msg)
-        s.flush()
-        task = None
-        new_edit = None
-        if body.mode == "edit":
-            if c.project_id is None:
-                raise HTTPException(400, "Düzenleme için önce bir proje seç.")
-            context = context_for_task(s, c, before_id=user_msg.id)
-            task = s.scalars(
-                select(Task)
-                .where(
-                    Task.chat_id == chat_id,
-                    Task.kind == TaskKind.SESSION,
-                    Task.status.not_in([TaskStatus.COMPLETED, TaskStatus.CANCELLED]),
-                )
-                .order_by(Task.id.desc())
-            ).first()
-            if task is None:
-                task = Task(
-                    chat_id=chat_id,
-                    project_id=c.project_id,
-                    request=content,
-                    context=context,
-                    title=content[:80],
-                    kind=TaskKind.SESSION,
-                    stage=TaskStage.EXECUTE,
-                    status=TaskStatus.QUEUED,
-                )
-                s.add(task)
-                s.flush()
-            if body.attachments:
-                task.attachments = [*(task.attachments or []), *body.attachments]
-            new_edit = (task.id, content, context)
-            reply = Message(chat_id=chat_id, role="task", content="", task_id=task.id)
-        elif body.mode == "design":
-            reply = Message(
-                chat_id=chat_id,
-                role="assistant",
-                content="",
-                status="streaming",
-                meta={"kind": "design"},
-            )
-        elif body.mode == "research":
-            reply = Message(
-                chat_id=chat_id,
-                role="assistant",
-                content="",
-                status="streaming",
-                meta={"kind": "research"},
-            )
-        elif body.mode == "chat":
-            if body.model and registry.get(body.model) is None:
-                raise HTTPException(400, "Bilinmeyen model.")
-            reply = Message(
-                chat_id=chat_id,
-                role="assistant",
-                content="",
-                status="streaming",
-                adapter_id=body.model,
-            )
-        else:
-            # The conversation so far travels with the task to the planner and the agents.
-            context = context_for_task(s, c, before_id=user_msg.id)
-            task = Task(
-                chat_id=chat_id,
-                project_id=c.project_id,
-                request=content,
-                context=context,
-                title=content[:80],
-                attachments=body.attachments or None,
-            )
-            s.add(task)
-            s.flush()
-            reply = Message(chat_id=chat_id, role="task", content="", task_id=task.id)
-        s.add(reply)
+        reply = Message(chat_id=chat_id, role="assistant", content="", status="streaming")
+        s.add_all([user_msg, reply])
         s.flush()
         result = {
             "chat": serialize.chat(c),
             "messages": [serialize.message(user_msg), serialize.message(reply)],
-            "task": serialize.task_full(s, task) if task else None,
         }
-    if new_edit:
-        orchestrator.add_edit(*new_edit)
-        with session() as s:
-            result["task"] = serialize.task_full(s, s.get(Task, new_edit[0]))
-    elif task:
-        orchestrator.start_planning(result["task"]["id"])
-    else:
-        chat_service.start_reply(result["messages"][1]["id"])
+    chat_service.start_reply(result["messages"][1]["id"])
     return result
 
 
@@ -405,12 +343,19 @@ async def cancel_message(message_id: int):
         raise HTTPException(404) from None
 
 
-# ---------- tasks & approvals ----------
+@router.post("/messages/{message_id}/resume")
+async def resume_message(message_id: int):
+    """A reply waiting for the quota reset: try again now."""
+    if not chat_service.resume_now(message_id):
+        raise HTTPException(409, "Bu yanıt beklemede değil.")
+    return {"ok": True}
+
+
+# ---------- changes (the chat's isolated project copy) ----------
 
 
 class DecisionIn(BaseModel):
-    decision: Decision
-    note: str | None = Field(default=None, max_length=5000)
+    decision: Literal["approve", "reject", "undo_last", "rerun_checks"]
 
 
 @router.get("/tasks/{task_id}/events")
@@ -425,7 +370,7 @@ def task_events(task_id: int):
 @router.post("/tasks/{task_id}/decision")
 async def decide(task_id: int, body: DecisionIn):
     try:
-        return await orchestrator.decide(task_id, body.decision, body.note)
+        return await sessions.decide(task_id, body.decision)
     except LookupError:
         raise HTTPException(404) from None
     except InvalidTransition as e:
@@ -435,10 +380,10 @@ async def decide(task_id: int, body: DecisionIn):
 @router.get("/tasks/{task_id}/diff")
 async def task_diff(task_id: int):
     try:
-        return await orchestrator.diff(task_id)
+        return await sessions.diff(task_id)
     except LookupError:
         raise HTTPException(404) from None
-    except (ExecError, gitops.GitError) as e:
+    except InvalidTransition as e:
         raise HTTPException(409, str(e)) from None
 
 
@@ -486,22 +431,9 @@ async def list_models(fresh: bool = False):
     return out
 
 
-@router.get("/agents")
-def list_agents():
-    return [
-        {**a.__dict__, "work": routing.AGENT_WORK.get(a.id), "work_label": _work_label(a.id)}
-        for a in AGENTS.values()
-    ]
-
-
-def _work_label(agent_id: str) -> str | None:
-    kind = routing.WORK_KINDS.get(routing.AGENT_WORK.get(agent_id, ""))
-    return kind.label if kind else None
-
-
 @router.get("/routing")
 async def get_routing():
-    return await orchestrator.router.describe()
+    return await model_router.describe()
 
 
 class RouteIn(BaseModel):
@@ -510,16 +442,14 @@ class RouteIn(BaseModel):
 
 @router.put("/routing/{kind}")
 async def put_routing(kind: str, body: RouteIn):
-    if kind not in routing.WORK_KINDS:
+    if kind not in WORK_KINDS:
         raise HTTPException(404)
     if body.adapter != "auto":
         adapter = registry.get(body.adapter)
-        if adapter is None or orchestrator.router.eligible(kind, adapter, False):
+        if adapter is None or model_router.eligible(kind, adapter, False):
             raise HTTPException(400, "Bu model bu işi yapamaz.")
-    current = dict(routing.overrides())
-    current[kind] = body.adapter
-    prefs.put("routing", current)
-    return await orchestrator.router.describe()
+    prefs.put("routing", {**overrides(), kind: body.adapter})
+    return await model_router.describe()
 
 
 class PrefIn(BaseModel):
@@ -542,7 +472,6 @@ def put_preference(key: str, body: PrefIn):
 class TemplateIn(BaseModel):
     title: str = Field(min_length=1, max_length=80)
     body: str = Field(min_length=1, max_length=20_000)
-    mode: Literal["chat", "task", "research", "design", "edit"] = "task"
 
 
 @router.get("/templates")
@@ -553,7 +482,6 @@ def list_templates():
                 "id": f"u-{t.id}",
                 "title": t.title,
                 "body": t.body,
-                "mode": t.mode,
                 "description": "Kayıtlı şablon",
                 "custom": True,
             }
@@ -565,7 +493,7 @@ def list_templates():
 @router.post("/templates", status_code=201)
 def create_template(body: TemplateIn):
     with session() as s:
-        t = Template(title=body.title.strip(), body=body.body, mode=body.mode)
+        t = Template(title=body.title.strip(), body=body.body)
         s.add(t)
         s.flush()
         return {"id": f"u-{t.id}"}

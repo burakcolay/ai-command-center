@@ -59,8 +59,8 @@ export function MemoryEditor({
           <div className="min-w-0">
             <div className="text-[15px] font-medium text-fg">{project.name} · Proje Hafızası</div>
             <p className="mt-1 text-[12.5px] leading-relaxed text-dim">
-              Burada yazanlar bu projedeki her sohbete, plana ve ajana verilir. Birleştirilen her
-              görev "Karar Günlüğü"ne otomatik eklenir.
+              Burada yazanlar bu projedeki her mesajda asistana verilir. Birleştirilen her
+              değişiklik "Karar Günlüğü"ne otomatik eklenir.
             </p>
             <div className="mt-1.5 truncate font-mono text-[10.5px] text-faint" title={path}>
               {path}

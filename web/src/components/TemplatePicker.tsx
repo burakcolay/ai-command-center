@@ -1,13 +1,12 @@
-import { BookmarkPlus, MessageCircle, X, Zap } from "lucide-react";
+import { BookmarkPlus, LayoutTemplate, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
-import type { ComposerMode, Template } from "../lib/types";
+import type { Template } from "../lib/types";
 
 interface Props {
   query: string;
   active: number;
   currentText: string;
-  currentMode: ComposerMode;
   onPick: (t: Template) => void;
   onClose: () => void;
   onItems: (items: Template[]) => void;
@@ -43,7 +42,7 @@ export function TemplatePicker(p: Props) {
 
   const save = async () => {
     try {
-      await api.createTemplate(title.trim(), p.currentText.trim(), p.currentMode);
+      await api.createTemplate(title.trim(), p.currentText.trim());
       setSaving(false);
       setTitle("");
       await load();
@@ -79,7 +78,6 @@ export function TemplatePicker(p: Props) {
           <div className="px-3 py-2 text-[12.5px] text-dim">Eşleşen şablon yok.</div>
         )}
         {items.map((t, i) => {
-          const Icon = t.mode === "chat" ? MessageCircle : Zap;
           return (
             <div
               key={t.id}
@@ -88,7 +86,7 @@ export function TemplatePicker(p: Props) {
               className={`group flex items-center gap-3 px-3 py-2 ${i === p.active ? "bg-white/[0.07]" : "hover:bg-white/[0.04]"}`}
             >
               <button onMouseDown={(e) => e.preventDefault()} onClick={() => p.onPick(t)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                <Icon size={13} className="shrink-0 text-faint" />
+                <LayoutTemplate size={13} className="shrink-0 text-faint" />
                 <span className="shrink-0 text-[13px] text-fg">{t.title}</span>
                 <span className="min-w-0 truncate text-[12px] text-faint">{t.description}</span>
               </button>

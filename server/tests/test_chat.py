@@ -1,121 +1,137 @@
+"""One chat, one assistant: the message alone decides what happens."""
+
 import time
+from dataclasses import replace
 
-import pytest
-
+from acc import assistant
 from acc.adapters import registry
+from acc.adapters.base import SessionLost
 from acc.adapters.mock import MockAdapter
+from tests.helpers import (  # noqa: F401
+    Recorder,
+    chat_state,
+    new_chat,
+    project,
+    send,
+    turn,
+    use,
+    wait_msg,
+)
 
 
-class _Recorder(MockAdapter):
-    """Mock that remembers every request it was given."""
+def test_reply_streams_and_completes(client, rec):
+    chat_id = new_chat(client)
+    m = turn(client, chat_id, "Merhaba, nasılsın?")
+    assert m["content"].startswith("Demo yanıtı") and m["adapter_id"] == "mock"
+    state = chat_state(client, chat_id)
+    assert state["chat"]["title"] == "Merhaba, nasılsın?"
+    assert state["tasks"] == []  # just talking creates nothing to review
+    req = rec.requests[-1]
+    assert req.system_prompt == assistant.SYSTEM and req.effort == "high"
+    assert req.prompt.endswith("KULLANICININ MESAJI:\nMerhaba, nasılsın?")
 
-    def __init__(self, delay=0.01):
-        super().__init__(delay)
-        self.requests = []
+
+def test_without_project_the_assistant_gets_web_and_a_scratch_folder(client, rec):
+    chat_id = new_chat(client)
+    turn(client, chat_id, "Selam")
+    req = rec.requests[-1]
+    assert req.tools == assistant.SCRATCH_TOOLS and "Bash" not in req.tools
+    assert req.settings is None  # no shell, so no sandbox needed
+    assert req.cwd.name == str(chat_id) and req.cwd.is_dir()
+    assert req.output_dir is not None and req.output_dir.is_dir()
+    assert "ÇIKTI KLASÖRÜ" in req.prompt
+
+
+def test_history_is_sent_when_the_model_cannot_resume(client, rec):
+    chat_id = new_chat(client)
+    turn(client, chat_id, "Uygulamanın adı Kuzey olsun")
+    turn(client, chat_id, "Adı neydi?")
+    prompt = rec.requests[-1].prompt
+    assert "SOHBET GEÇMİŞİ" in prompt and "Kuzey" in prompt
+    assert rec.requests[-1].resume is None and rec.requests[-1].session_id is None
+
+
+def test_cancel_keeps_partial_answer_and_blocks_overlap(client, slow):
+    chat_id = new_chat(client)
+    msg_id = send(client, chat_id, "Uzun bir yanıt ver")
+    time.sleep(0.35)  # a few chunks arrive
+    r = client.post(f"/api/chats/{chat_id}/messages", json={"content": "x"})
+    assert r.status_code == 409  # one reply at a time
+    assert client.post(f"/api/messages/{msg_id}/cancel").status_code == 200
+    m = wait_msg(client, chat_id, msg_id, "cancelled")
+    assert m["content"].startswith("Demo yanıtı") and m["content"].endswith("_(durduruldu)_")
+
+
+def test_streaming_chat_cannot_be_deleted(client, slow):
+    chat_id = new_chat(client)
+    msg_id = send(client, chat_id, "Uzun bir yanıt ver")
+    assert client.delete(f"/api/chats/{chat_id}").status_code == 409
+    client.post(f"/api/messages/{msg_id}/cancel")
+    wait_msg(client, chat_id, msg_id, "cancelled")
+    assert client.delete(f"/api/chats/{chat_id}").status_code == 204
+
+
+def test_unknown_project_is_refused(client):
+    chat_id = new_chat(client)
+    r = client.post(f"/api/chats/{chat_id}/messages", json={"content": "x", "project_id": 99999})
+    assert r.status_code == 400
+
+
+def test_quality_preference_sets_effort(client, rec):
+    assert client.put("/api/preferences/quality", json={"value": "best"}).status_code == 200
+    try:
+        turn(client, new_chat(client), "Detaylı düşün")
+        assert rec.requests[-1].effort == "xhigh"
+    finally:
+        client.put("/api/preferences/quality", json={"value": "balanced"})
+    assert client.put("/api/preferences/quality", json={"value": "turbo"}).status_code == 400
+
+
+def test_templates_have_no_modes(client):
+    items = client.get("/api/templates").json()
+    assert {"b-market", "b-design", "b-bug"} <= {t["id"] for t in items}
+    assert all("mode" not in t for t in items)
+
+
+class _Claude(Recorder):
+    """Wears Claude Code's id; forgets its conversations when asked to."""
+
+    info = replace(MockAdapter.info, id="claude_code", name="Claude Code")
+
+    def __init__(self):
+        super().__init__()
+        self.forget = False
 
     async def run(self, req, run_id):
-        self.requests.append(req)
+        if req.resume and self.forget:
+            self.requests.append(req)
+            raise SessionLost("No conversation found")
         async for ev in super().run(req, run_id):
             yield ev
 
 
-@pytest.fixture
-def rec():
-    original = registry._adapters
-    r = _Recorder()
-    registry._adapters = {"mock": r}
-    registry._health.clear()
-    yield r
-    registry._adapters = original
+def test_claude_keeps_its_own_conversation_and_rebuilds_a_lost_one(client):
+    claude = _Claude()
+    original = use(claude)
+    try:
+        chat_id = new_chat(client)
+        turn(client, chat_id, "Uygulamanın adı Kuzey olsun")
+        first = claude.requests[-1]
+        assert first.session_id and first.resume is None
+        turn(client, chat_id, "Adı neydi?")
+        second = claude.requests[-1]
+        assert second.resume == first.session_id and second.session_id is None
+        assert "SOHBET GEÇMİŞİ" not in second.prompt  # Claude remembers by itself
 
-
-def _wait_msg(client, chat_id, msg_id, status, timeout=5):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        m = next(
-            x for x in client.get(f"/api/chats/{chat_id}").json()["messages"] if x["id"] == msg_id
-        )
-        if m["status"] == status:
-            return m
-        time.sleep(0.02)
-    raise AssertionError(f"message {msg_id} never reached {status}: {m}")
-
-
-def _say(client, chat_id, text, mode="chat", project_id=None):
-    r = client.post(
-        f"/api/chats/{chat_id}/messages",
-        json={"content": text, "mode": mode, "project_id": project_id},
-    )
-    assert r.status_code == 201, r.text
-    return r.json()
-
-
-def test_chat_reply_streams_and_completes(client, rec):
-    chat = client.post("/api/chats", json={}).json()
-    out = _say(client, chat["id"], "Merhaba")
-    assert out["task"] is None
-    reply = out["messages"][1]
-    assert reply["role"] == "assistant" and reply["status"] == "streaming"
-    done = _wait_msg(client, chat["id"], reply["id"], "done")
-    assert "Göreve dönüştür" in done["content"]
-    req = rec.requests[-1]
-    assert req.stream_text and req.json_schema is None
-    # No project: the assistant may search the web but has no file tools.
-    assert req.tools == ["WebSearch", "WebFetch"]
-
-
-def test_chat_remembers_history(client, rec):
-    chat = client.post("/api/chats", json={}).json()
-    first = _say(client, chat["id"], "Uygulamanın adı Orbit olsun")
-    _wait_msg(client, chat["id"], first["messages"][1]["id"], "done")
-    second = _say(client, chat["id"], "Adı neydi?")
-    _wait_msg(client, chat["id"], second["messages"][1]["id"], "done")
-    prompt = rec.requests[-1].prompt
-    assert "Kullanıcı: Uygulamanın adı Orbit olsun" in prompt
-    assert "Asistan: Demo yanıtı" in prompt
-    assert prompt.rstrip().endswith("Adı neydi?")
-
-
-def test_project_chat_is_read_only(client, rec):
-    p = client.post("/api/projects", json={"name": "Sohbet Proje"}).json()
-    chat = client.post("/api/chats", json={"project_id": p["id"]}).json()
-    out = _say(client, chat["id"], "Kodu incele", project_id=p["id"])
-    _wait_msg(client, chat["id"], out["messages"][1]["id"], "done")
-    req = rec.requests[-1]
-    assert str(req.cwd) == p["path"]
-    assert not {"Edit", "Write", "Bash"} & set(req.tools)
-
-
-def test_task_after_chat_carries_the_conversation(client, rec):
-    chat = client.post("/api/chats", json={}).json()
-    first = _say(client, chat["id"], "Giriş ekranı koyu temalı ve tek sütun olsun")
-    _wait_msg(client, chat["id"], first["messages"][1]["id"], "done")
-    out = _say(client, chat["id"], "Kararlaştırdıklarımızı uygula", mode="task")
-    assert out["task"]["status"] == "planning"
-    deadline = time.time() + 5
-    while time.time() < deadline and not any(r.json_schema for r in rec.requests):
-        time.sleep(0.02)
-    plan_req = next(r for r in rec.requests if r.json_schema)
-    assert "SOHBET GEÇMİŞİ" in plan_req.prompt
-    assert "Giriş ekranı koyu temalı ve tek sütun olsun" in plan_req.prompt
-
-
-@pytest.fixture
-def slow():
-    original = registry._adapters
-    registry._adapters = {"mock": MockAdapter(delay=1.0)}
-    yield
-    registry._adapters = original
-
-
-def test_cancel_keeps_partial_answer_and_blocks_overlap(client, slow):
-    chat = client.post("/api/chats", json={}).json()
-    out = _say(client, chat["id"], "Uzun bir yanıt ver")
-    msg_id = out["messages"][1]["id"]
-    time.sleep(0.35)  # a few chunks arrive
-    # A second chat message while the first reply is still being written is refused.
-    r = client.post(f"/api/chats/{chat['id']}/messages", json={"content": "x", "mode": "chat"})
-    assert r.status_code == 409
-    assert client.post(f"/api/messages/{msg_id}/cancel").status_code == 200
-    m = _wait_msg(client, chat["id"], msg_id, "cancelled")
-    assert m["content"].startswith("Demo yanıtı") and m["content"].endswith("_(durduruldu)_")
+        claude.forget = True
+        m = turn(client, chat_id, "Rengi ne olsun?")
+        assert m["content"].startswith("Demo yanıtı")
+        rebuilt = claude.requests[-1]
+        assert rebuilt.resume is None and rebuilt.session_id != first.session_id
+        assert "SOHBET GEÇMİŞİ" in rebuilt.prompt and "Kuzey" in rebuilt.prompt
+        claude.forget = False
+        turn(client, chat_id, "Tamam")
+        assert claude.requests[-1].resume == rebuilt.session_id
+    finally:
+        registry._adapters = original
+        registry._health.clear()

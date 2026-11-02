@@ -26,3 +26,6 @@ def client():
 
     with TestClient(app, base_url="http://127.0.0.1:7420") as c:
         yield c
+
+
+from tests.helpers import rec, slow  # noqa: E402, F401  (shared fixtures)

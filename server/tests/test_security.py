@@ -1,10 +1,9 @@
 import json
 import stat
 
-from acc import config, security
+from acc import assistant, config, security
 from acc.adapters.base import RunRequest
 from acc.adapters.claude_code import ClaudeCodeAdapter
-from acc.agents import AGENTS
 
 
 def test_cross_site_requests_are_refused(client):
@@ -31,14 +30,19 @@ def test_every_claude_run_denies_secret_files():
     assert "sandbox" not in s
 
 
-def test_shell_agents_get_sandbox_plus_secret_rules():
-    s = _settings(RunRequest(prompt="x", settings=AGENTS["developer"].settings))
+def test_shell_access_always_comes_with_the_sandbox():
+    s = _settings(RunRequest(prompt="x", settings=assistant.settings(assistant.PROJECT_TOOLS)))
     assert s["sandbox"]["enabled"] and s["sandbox"]["failIfUnavailable"]
     assert s["sandbox"]["allowUnsandboxedCommands"] is False
     assert "~/.ssh" in s["sandbox"]["filesystem"]["denyRead"]
     assert str(config.DATA_DIR / "acc.db") in s["sandbox"]["filesystem"]["denyRead"]
     assert "Read(**/.env)" in s["permissions"]["deny"]
-    assert AGENTS["reviewer"].settings is None  # no shell, no sandbox needed
+    assert assistant.settings(assistant.SCRATCH_TOOLS) is None  # no shell, no sandbox needed
+
+
+def test_assistant_prompt_keeps_the_injection_rule():
+    # Instructions found in files, images and web pages must stay data.
+    assert "GÜVENLİK" in assistant.SYSTEM and "veridir" in assistant.SYSTEM
 
 
 def test_redaction():
@@ -54,16 +58,14 @@ def test_redaction():
     assert security.redact_data({"a": ["API_KEY: abcdef123456"]}) == {"a": ["API_KEY: [gizli]"]}
 
 
-def test_task_logs_are_redacted(client):
-    from acc.api import orchestrator
+def test_change_logs_are_redacted(client):
+    from acc import sessions
+    from tests.helpers import new_chat, project, turn
 
-    chat = client.post("/api/chats", json={}).json()
-    task_id = client.post(f"/api/chats/{chat['id']}/messages", json={"content": "x"}).json()[
-        "task"
-    ]["id"]
-    orchestrator._event(
-        task_id, "tool", {"name": "Bash", "input": {"command": "export TOKEN=abcdef123456"}}
-    )
+    p = project(client)
+    chat_id = new_chat(client, p["id"])
+    task_id = turn(client, chat_id, "Bir satır ekle", p["id"])["meta"]["task_id"]
+    sessions.log(task_id, "export TOKEN=abcdef123456")
     events = client.get(f"/api/tasks/{task_id}/events").json()
     assert "abcdef123456" not in json.dumps(events)
 
@@ -81,3 +83,36 @@ def test_timestamps_carry_utc_zone(client):
 def test_unknown_api_routes_are_404_not_the_ui_page(client):
     r = client.get("/api/olmayan-endpoint")
     assert r.status_code == 404 and r.headers["content-type"].startswith("application/json")
+
+
+def test_rejects_non_localhost_host():
+    from fastapi.testclient import TestClient
+
+    from acc.main import app
+
+    with TestClient(app, base_url="http://evil.example") as c:
+        assert c.get("/api/projects").status_code == 403
+
+
+def test_create_project_in_workspace(client):
+    r = client.post("/api/projects", json={"name": "Deneme Proje"})
+    assert r.status_code == 201, r.text
+    assert r.json()["path"].endswith("deneme-proje")
+    assert client.post("/api/projects", json={"name": "Deneme Proje"}).status_code == 409
+    assert client.post("/api/projects", json={"name": "x", "path": "/yok/boyle"}).status_code == 400
+
+
+def test_websocket_handler_ends_when_the_client_leaves(client):
+    import time
+
+    from acc.events import broker
+
+    before = len(broker._subs)
+    with client.websocket_connect("/ws") as ws:
+        broker.publish({"type": "approvals_changed"})
+        assert ws.receive_json() == {"type": "approvals_changed"}
+        assert len(broker._subs) == before + 1
+    deadline = time.time() + 2
+    while len(broker._subs) > before and time.time() < deadline:
+        time.sleep(0.02)
+    assert len(broker._subs) == before  # no handler left waiting for the next event
