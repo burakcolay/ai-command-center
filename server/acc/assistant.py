@@ -133,6 +133,9 @@ BÜYÜK İŞLER, YENİ PROJE VE SPEC DOSYALARI (Proje Kartı)
   klasör yapısı (her teknoloji seçimi gerekçesiyle) · Ekip · API sözleşmesi (alanlar arası
   arayüz: uç noktalar, istek/yanıt, hata biçimi, ortak tipler) · Veri modeli · Aşamalar (her biri
   kabul ölçütüyle) · Kararlar.
+- Aşamalar bölümü ("## Aşamalar") işaretlenebilir liste olsun, her aşama tek satır:
+  "- [ ] 2. Backend API — kabul: testler geçer, sözleşmedeki uç noktalar çalışır". Bir aşama
+  bitip kalite kontrolleri geçince o satırı "- [x]" yap; Orbit ilerlemeyi buradan okur.
 - Ekip bölümü tam bu biçimde bir tablo olsun; Orbit onu okuyup her alana bir uzman kurar:
   ## Ekip
   | Alan | Teknoloji | Klasör | Yapan |

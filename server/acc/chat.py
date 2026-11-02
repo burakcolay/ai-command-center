@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from acc import (
     assistant,
     attachments,
+    autopilot,
     card,
     catalog,
     config,
@@ -48,7 +49,7 @@ from acc.gitops import discard as discard_uncommitted
 from acc.mcp_codex import FULL_NAME as CODEX_TOOL
 from acc.models import Chat, Message, Project, Task
 from acc.orchestra import Orchestra
-from acc.routing import Router
+from acc.routing import Router, utilization
 
 TRANSCRIPT_LIMIT = 150_000  # chars of history sent when a conversation must be rebuilt
 COMPACT_AT = 30_000  # unsummarised history longer than this gets summarised
@@ -257,6 +258,10 @@ class ChatService:
             user_id, question = user.id, user.content
             attached = (user.meta or {}).get("attachments") or []
             chat = s.get(Chat, chat_id)
+            # Otopilot: on for this chat, or this very turn was started by it (its last one).
+            autopilot_on = (chat.autopilot_left or 0) > 0 or bool(
+                (user.meta or {}).get("autopilot")
+            )
             project = s.get(Project, chat.project_id) if chat.project_id else None
             project_name = project.name if project else None
             project_path = Path(project.path) if project else None
@@ -319,9 +324,11 @@ class ChatService:
 
         # The Project Card, if the project has one: the lead and every specialist work from it.
         card_text = card.read(cwd) if project_path and not local else None
+        phases_before = card.phases(card_text)
         # Plain talk on "auto" goes light: middle model, low effort, read-only, no team.
         light = (
             provider is None
+            and not autopilot_on
             and model_pick == "auto"
             and adapter.info.id in TEAM_ADAPTERS
             and not local
@@ -379,6 +386,8 @@ class ChatService:
                 parts.append(f"PROJE: {project_name} ({project_path}){where}\n\n")
             parts.append(memory.prompt_block(project_name))
             parts.append(card.lead_block(card_text))
+            if autopilot_on and ws:
+                parts.append(autopilot.NOTE)
             if ws:
                 parts.append(_checks_block(sessions.checks_config(ws.task_id, ws.cwd)))
                 parts.append(sessions.failed_checks_block(ws.task_id))
@@ -478,8 +487,14 @@ class ChatService:
                     )
                     if reviewed:
                         meta["review"] = reviewed
+            decision = None
+            if autopilot_on:
+                decision = await self._autopilot_decision(chat_id, ws, meta, phases_before)
+                meta["autopilot"] = decision.meta()
             meta["team"] = orchestra.finish()
             self._finish(message_id, notice + text, "done", adapter.info.id, meta)
+            if decision:
+                self._autopilot_next(chat_id, decision)
             if time.monotonic() - started > NOTIFY_AFTER_S:
                 notify.send("Orbit yanıt verdi", question.strip().splitlines()[0][:120])
         except QuotaExceeded as e:
@@ -495,6 +510,8 @@ class ChatService:
                 failed = (partial + "\n\n" if partial else "") + f"⚠ {e}"
                 team = {"team": orchestra.finish()}
                 self._finish(message_id, failed, "error", adapter.info.id, team)
+            if autopilot_on:
+                self._autopilot_next(chat_id, autopilot.Decision(False, "Tur yarıda kaldı."))
             await self._close_turn(ws)
         except Exception as e:
             self._finish(message_id, f"⚠ Beklenmeyen hata: {e!r}", "error")
@@ -666,6 +683,63 @@ class ChatService:
         title = f"İnceleme düzeltmeleri ({r.by})"
         fixed = await sessions.finish_turn(ws, title, fix_text, author.info.id)
         return text, r.as_meta(fixed=fixed)
+
+    # ---------- otopilot ----------
+
+    async def _autopilot_decision(
+        self,
+        chat_id: int,
+        ws: sessions.Workspace | None,
+        meta: dict[str, Any],
+        before: list[dict[str, Any]],
+    ) -> autopilot.Decision:
+        checks: list[dict[str, Any]] | None = None
+        after: list[dict[str, Any]] = []
+        if ws:
+            with session() as s:
+                checks = s.get(Task, ws.task_id).checks
+            after = card.phases(card.read(ws.cwd))
+        claude = self.registry.get("claude_code")
+        decision = autopilot.decide(
+            changed="task_id" in meta,
+            checks=checks,
+            review=meta.get("review"),
+            before=before,
+            after=after,
+            quota=await utilization(claude) if claude else None,
+        )
+        with session() as s:
+            left = s.get(Chat, chat_id).autopilot_left or 0
+        if decision.go and left <= 0:
+            return autopilot.Decision(
+                False,
+                f"{autopilot.TURNS} turluk otopilot sınırı doldu; sürdürmek için yeniden aç.",
+            )
+        return decision
+
+    def _autopilot_next(self, chat_id: int, decision: autopilot.Decision) -> None:
+        """Start the next phase as if the user had written "devam", or switch otopilot off."""
+        with session() as s:
+            c = s.get(Chat, chat_id)
+            if not decision.go or (c.autopilot_left or 0) <= 0:
+                c.autopilot_left = 0
+                broker.publish({"type": "chat", "chat": serialize.chat(c)})
+                return
+            c.autopilot_left -= 1
+            asked = Message(
+                chat_id=chat_id,
+                role="user",
+                content=autopilot.PROMPT,
+                meta={"autopilot": True, "phase": decision.phase},
+            )
+            reply = Message(chat_id=chat_id, role="assistant", content="", status="streaming")
+            s.add_all([asked, reply])
+            s.flush()
+            payloads = [serialize.message(asked), serialize.message(reply)]
+            broker.publish({"type": "chat", "chat": serialize.chat(c)})
+        for payload in payloads:
+            broker.publish({"type": "message", "message": payload})
+        self.start_reply(payloads[1]["id"])
 
     async def _collect_outputs(
         self, message_id: int, out_dir: Path, question: str, project_name: str | None

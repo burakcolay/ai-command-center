@@ -1,6 +1,7 @@
 import {
   ArrowUp,
   Cpu,
+  FastForward,
   FileText,
   FolderKanban,
   LayoutTemplate,
@@ -29,6 +30,9 @@ interface Props {
   onStop?: () => void;
   onError: (msg: string) => void;
   autoFocus?: boolean;
+  /** Otopilot (only with a project): on, and how many automatic turns are left. */
+  autopilot?: { on: boolean; left: number };
+  onAutopilotToggle?: (on: boolean) => void;
 }
 
 /** Select the first [placeholder] so the user can type over it right away. */
@@ -317,6 +321,26 @@ export function Composer(p: Props) {
               ))}
             </select>
           </label>
+          {p.projectId !== null && p.autopilot && p.onAutopilotToggle && (
+            <button
+              type="button"
+              onClick={() => p.onAutopilotToggle?.(!p.autopilot?.on)}
+              aria-pressed={p.autopilot.on}
+              title={
+                "Otopilot: kontroller geçince ve inceleme ciddi sorun bulmayınca Proje Kartı'ndaki " +
+                "sıradaki aşamaya kendiliğinden geçer. Bir karar gerekirse, bir kontrol kırılırsa " +
+                "ya da kart bitince durur."
+              }
+              className={`flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 ${
+                p.autopilot.on ? "bg-white/[0.08] text-fg" : "text-dim hover:text-fg"
+              }`}
+            >
+              <FastForward size={13} strokeWidth={1.6} className="shrink-0" />
+              <span className="font-mono text-[11px] tracking-wide">
+                Otopilot{p.autopilot.on && p.autopilot.left > 0 ? ` · ${p.autopilot.left}` : ""}
+              </span>
+            </button>
+          )}
         </div>
         {p.onStop ? (
           <button

@@ -93,7 +93,16 @@ export interface Chat {
   project_id: number | null;
   model_choice: ModelChoice;
   effort_choice: string | null;
+  /** Otopilot: how many more turns may start on their own (0 = off). */
+  autopilot_left: number;
   created_at: string;
+}
+
+/** Otopilot's call after a turn: go on to the next phase, or why it stopped. */
+export interface AutopilotDecision {
+  go: boolean;
+  reason: string;
+  phase: string;
 }
 
 export interface Message {
@@ -116,6 +125,10 @@ export interface Message {
     task_id?: number;
     /** Waiting for the quota reset (unix seconds). */
     resume_at?: number;
+    /** User side: started by Otopilot (true). Reply side: Otopilot's call after the turn. */
+    autopilot?: boolean | AutopilotDecision;
+    /** Otopilot-started message: the phase it works on, e.g. "3/5". */
+    phase?: string;
     /** The team that worked on this turn (lead, subagents, Codex, reviewer). */
     team?: TeamPicture;
     /** Independent review of this turn's change by another model (or a separate session). */
@@ -197,6 +210,8 @@ export interface ProjectCard {
   content: string | null;
   state: "pending" | "merged" | null;
   team: { name: string; tech: string; folder: string; builder: "claude" | "codex" }[];
+  /** The "## Aşamalar" checklist. */
+  phases: { title: string; done: boolean }[];
 }
 
 export type TeamStatus = "running" | "done" | "failed";
@@ -346,4 +361,5 @@ export type WsMessage =
   | { type: "team"; message_id: number; team: TeamPicture }
   | { type: "task"; task: Task }
   | { type: "event"; event: TaskEvent }
-  | { type: "approvals_changed" };
+  | { type: "approvals_changed" }
+  | { type: "chat"; chat: Chat };

@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from acc import (
     attachments,
+    autopilot,
     card,
     catalog,
     checks,
@@ -172,8 +173,8 @@ async def project_card(project_id: int):
                 {"name": a.name, "tech": a.tech, "folder": a.folder, "builder": a.builder}
                 for a in card.team(text)
             ]
-            return {"content": text, "state": state, "team": team}
-    return {"content": None, "state": None, "team": []}
+            return {"content": text, "state": state, "team": team, "phases": card.phases(text)}
+    return {"content": None, "state": None, "team": [], "phases": []}
 
 
 @router.get("/projects/{project_id}/checks")
@@ -357,6 +358,21 @@ async def post_message(chat_id: int, body: MessageIn):
         }
     chat_service.start_reply(result["messages"][1]["id"])
     return result
+
+
+class AutopilotIn(BaseModel):
+    on: bool
+
+
+@router.put("/chats/{chat_id}/autopilot")
+def set_autopilot(chat_id: int, body: AutopilotIn):
+    """Let the team move through the card's phases by itself, for a fixed number of turns."""
+    with session() as s:
+        c = s.get(Chat, chat_id)
+        if c is None:
+            raise HTTPException(404)
+        c.autopilot_left = autopilot.TURNS if body.on else 0
+        return serialize.chat(c)
 
 
 class UploadIn(BaseModel):

@@ -71,7 +71,8 @@ def overrides() -> dict[str, str]:
     return value if isinstance(value, dict) else {}
 
 
-async def _utilization(adapter: ModelAdapter) -> float | None:
+async def utilization(adapter: ModelAdapter) -> float | None:
+    """The most used quota window, when the provider reports it verifiably."""
     usage = await adapter.usage_status()
     if usage.source != "verified" or not usage.windows:
         return None
@@ -119,7 +120,7 @@ class Router:
             if health.state != ModelState.AVAILABLE:
                 skipped.append(f"{adapter.info.name}: {health.detail}")
                 continue
-            usable.append((adapter, await _utilization(adapter)))
+            usable.append((adapter, await utilization(adapter)))
         if not usable:
             return Choice(None, "", skipped)
 

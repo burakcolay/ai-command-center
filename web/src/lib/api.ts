@@ -89,6 +89,8 @@ export const api = {
     }),
   catalog: () => req<CatalogProvider[]>("/catalog"),
   usage: (days: number) => req<UsageSummary>(`/usage?days=${days}`),
+  setAutopilot: (chatId: number, on: boolean) =>
+    req<Chat>(`/chats/${chatId}/autopilot`, { method: "PUT", body: JSON.stringify({ on }) }),
   upload: (name: string, data: string) =>
     post<{ id: string; name: string; mime: string }>("/uploads", { name, data }),
   cancelMessage: (id: number) => post<Message>(`/messages/${id}/cancel`, {}),

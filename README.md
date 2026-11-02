@@ -87,6 +87,17 @@ Onaydan sonra iş aşama aşama ilerler:
 
 Her aşamanın sonunda tek bir değişiklik kartı görürsün; "devam" deyince sonraki aşamaya geçilir.
 
+**Otopilot:** Her aşamadan sonra "devam" yazmak istemezsen yazma kutusundaki **Otopilot** düğmesini aç (proje seçiliyken görünür). Asistan kartın `## Aşamalar` listesindeki sıradaki aşamayı bitirince o satırı `- [x]` yapar ve Orbit bir sonraki aşamayı kendisi başlatır. Bir açılışta en fazla 6 otomatik tur yapılır.
+
+Orbit devam edip etmeyeceğine modelin sözüyle değil ölçtüğü şeylerle karar verir:
+- tur kodu değiştirdi mi,
+- kalite kontrolleri geçti mi,
+- bağımsız inceleme ciddi bir sorun bıraktı mı,
+- kartta yeni bir aşama işaretlendi mi, aşama kaldı mı,
+- Claude'un ölçülen kotası %85'in altında mı.
+
+Biri "hayır" ise Otopilot durur, kendini kapatır ve nedeni cevabın altında yazar. Asistan bir karar gerektiğinde aşamayı işaretlemeden soru sorar; bu da Otopilot'u durdurur. Durdur düğmesi ya da bir hata da onu kapatır. Kartın aşama ilerlemesi **Projeler → Kart**'ta görünür.
+
 **Ekip:** Asistan tek başına çalışmak zorunda değil; sen model seçmezsin, iş bölümünü kendisi yapar:
 - **Claude (lider):** İsteği anlar, planlar, kartı yazar ve işi dağıtır. Genel uzmanları: **Araştırmacı**, **Tasarımcı**, **Test yazarı**, **İnceleyici**.
 - **Alan uzmanları:** Proje Kartı'ndaki her alan için Orbit kendiliğinden bir uzman kurar, ör. "Backend geliştirici (FastAPI, server/)" ya da "Frontend geliştirici (React, web/)". Her uzmanın talimatında kartın kendisi vardır; projeyi anlamadan, kartı ve kendi klasöründeki kodu okumadan çalışmaz ve yalnızca kendi klasörüne yazar. Kodu yazan uzmanlar Dengeli kalitede daha hızlı ve kotayı az harcayan Sonnet'le çalışır; mimariyi kuran lider senin seçtiğin modelde kalır.

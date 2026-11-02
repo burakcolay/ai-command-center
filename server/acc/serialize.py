@@ -32,6 +32,7 @@ def chat(c: Chat) -> dict[str, Any]:
         "project_id": c.project_id,
         "model_choice": c.model_choice or "auto",
         "effort_choice": c.effort_choice,
+        "autopilot_left": c.autopilot_left or 0,
         "created_at": _ts(c.created_at),
     }
 

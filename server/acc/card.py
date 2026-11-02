@@ -18,6 +18,8 @@ LEAD_LIMIT = 16_000  # chars of the card in the lead's prompt
 BRIEF_LIMIT = 8_000  # chars of the card inside each specialist's instructions
 
 _TEAM_HEADING = re.compile(r"^#{2,3}\s*ek[iİı]p\b", re.I)
+_PHASE_HEADING = re.compile(r"^#{2,3}\s*asamalar\b")  # after _TR and lower()
+_PHASE = re.compile(r"^ ?(?:[-*+]|\d+[.)])\s+\[([ xX])\]\s+(.+)$")  # not nested
 _TR = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
 
 
@@ -111,3 +113,22 @@ def lead_block(text: str | None) -> str:
 
 def brief(text: str) -> str:
     return _trim(text, BRIEF_LIMIT)
+
+
+def phases(text: str | None) -> list[dict[str, object]]:
+    """The checklist under "## Aşamalar": [{"title": "...", "done": bool}]. Only top-level
+    "- [ ]" / "- [x]" lines count, so sub-steps don't change the progress."""
+    if not text:
+        return []
+    out: list[dict[str, object]] = []
+    inside = False
+    for ln in text.splitlines():
+        head = ln.strip().translate(_TR).lower()
+        level = len(head) - len(head.lstrip("#"))
+        if level and head[level : level + 1] == " ":  # a heading
+            if level <= 3:  # a deeper one (#### …) stays inside the section
+                inside = bool(_PHASE_HEADING.match(head))
+            continue
+        if inside and (m := _PHASE.match(ln)):
+            out.append({"title": m[2].strip()[:200], "done": m[1] in "xX"})
+    return out

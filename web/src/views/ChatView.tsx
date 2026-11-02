@@ -1,4 +1,4 @@
-import { FileText } from "lucide-react";
+import { FastForward, FileText } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -9,6 +9,7 @@ import { DotMatrix } from "../components/DotMatrix";
 import { attachmentUrl, type PendingAttachment } from "../lib/attachments";
 import { toolTarget } from "../lib/format";
 import type {
+  AutopilotDecision,
   DesignVariant,
   Message,
   ModelChoice,
@@ -43,6 +44,8 @@ interface Props {
   onResume: (messageId: number) => void;
   onLoadEvents: (taskId: number) => void;
   onError: (msg: string) => void;
+  autopilot: { on: boolean; left: number };
+  onAutopilotToggle: (on: boolean) => void;
 }
 
 type Prefill = { text: string; nonce: number; attachments?: PendingAttachment[] };
@@ -106,6 +109,8 @@ export function ChatView(p: Props) {
       onStop={busy ? () => p.onStop(busy.id) : undefined}
       onError={p.onError}
       autoFocus
+      autopilot={p.autopilot}
+      onAutopilotToggle={p.onAutopilotToggle}
     />
   );
 
@@ -157,7 +162,9 @@ export function ChatView(p: Props) {
             const task = taskId ? p.tasks[taskId] : undefined;
             return (
               <div key={m.id} className="space-y-4">
-                {m.role === "user" ? (
+                {m.role === "user" && m.meta?.autopilot === true ? (
+                  <AutopilotStep phase={m.meta.phase} />
+                ) : m.role === "user" ? (
                   <UserMessage message={m} />
                 ) : m.role === "assistant" ? (
                   <AssistantMessage
@@ -179,6 +186,9 @@ export function ChatView(p: Props) {
                     onError={p.onError}
                   />
                 )}
+                {m.role === "assistant" && typeof m.meta?.autopilot === "object" && (
+                  <AutopilotResult decision={m.meta.autopilot} />
+                )}
               </div>
             );
           })}
@@ -186,6 +196,29 @@ export function ChatView(p: Props) {
       </div>
       <div className="mx-auto w-full max-w-3xl px-4 pb-4">{composer}</div>
     </div>
+  );
+}
+
+/** A turn Otopilot started instead of the user typing "devam". */
+function AutopilotStep({ phase }: { phase?: string }) {
+  return (
+    <div className="flex items-center gap-3 animate-rise" role="note">
+      <span className="h-px flex-1 bg-line" />
+      <span className="flex items-center gap-1.5 font-mono text-[10.5px] tracking-wide text-dim">
+        <FastForward size={12} strokeWidth={1.6} /> Otopilot · aşama {phase ?? "?"}
+      </span>
+      <span className="h-px flex-1 bg-line" />
+    </div>
+  );
+}
+
+/** Why Otopilot went on or stopped after this turn. */
+function AutopilotResult({ decision: d }: { decision: AutopilotDecision }) {
+  return (
+    <p className="flex items-center gap-2 font-mono text-[11px] text-dim">
+      <span className={`size-1.5 shrink-0 rounded-full ${d.go ? "bg-white" : "ring-1 ring-faint"}`} />
+      {d.go ? `Otopilot: sıradaki aşamaya geçiyor (${d.phase}).` : `Otopilot durdu: ${d.reason}`}
+    </p>
   );
 }
 

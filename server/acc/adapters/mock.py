@@ -95,6 +95,11 @@ class MockAdapter(ModelAdapter):
             async for ev in self._team(req, run_id):
                 yield ev
         edit = any(w in message for w in EDIT_WORDS)
+        card = req.cwd / "PROJE.md" if req.cwd else None
+        if "OTOPİLOT AÇIK" in req.prompt and card and card.is_file():
+            # Demo of a phase: do the work (below) and tick the next box on the card.
+            edit = True
+            card.write_text(card.read_text().replace("- [ ]", "- [x]", 1))
         parts = ["Demo yanıtı: mesajını aldım."]
         if "tasarım" in message and not edit and req.output_dir:
             screens = [

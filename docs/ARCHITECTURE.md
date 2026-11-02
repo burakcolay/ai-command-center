@@ -225,6 +225,20 @@ Kullanıcı model seçmez; iş bölümü koddadır.
 
   `Orchestra` bunları `{lead, members, usage}` olarak WebSocket'e (`type: "team"`) yayınlar ve turun sonunda `messages.meta.team`'e yazar. İnceleyici de bir üye olarak görünür.
 
+### Otopilot (`autopilot.py`)
+
+- **Durum:** `chats.autopilot_left`: kalan otomatik tur sayısı (0 = kapalı). `PUT /chats/{id}/autopilot {on}` açınca 6'ya ayarlar. Her otomatik tur 1 düşer.
+- **İlerleme:** `card.phases`, kartın `## Aşamalar` bölümündeki üst düzey `- [ ]` / `- [x]` satırlarını okur. İç içe alt adımlar ve diğer bölümlerdeki kutular sayılmaz. Lider, aşamayı kontroller geçince işaretlemesi için yönlendirilir; Otopilot açıkken isteme ayrıca `autopilot.NOTE` eklenir.
+- **Karar:** Tur bittikten sonra, `_finish`'ten önce `autopilot.decide` çalışır. Sırayla şunlara bakar:
+  - değişiklik var mı (`meta.task_id`),
+  - kontrollerde `failed` var mı (sandbox yokken `skipped` engel değildir),
+  - düzeltilmemiş ciddi inceleme bulgusu var mı,
+  - aşama var mı, hepsi bitti mi, turdan önceye göre en az bir aşama daha işaretlendi mi,
+  - `routing.utilization` ile Claude kotası %85'i geçti mi,
+  - tur hakkı kaldı mı.
+- **Sonuç:** Karar `meta.autopilot = {go, reason, phase}` olarak saklanır. Devam ediliyorsa sohbete `meta.autopilot = true` olan bir kullanıcı mesajı ("Devam: kartta sıradaki aşama (otopilot).") ve yeni bir yanıt eklenir; ikisi de WebSocket'le yayınlanır. Durulduğunda `autopilot_left = 0` olur ve `{"type": "chat"}` olayı arayüzdeki düğmeyi kapatır. İptal ya da hata da Otopilot'u kapatır. Otopilot turları hafif sohbet moduna düşmez.
+- **Neden ölçüm:** Modelin "bitti" demesi yeterli değildir. Kontrolleri Orbit kendisi çalıştırır, aşama işaretini dosyadan okur, kotayı sağlayıcının bildirdiği değerden alır.
+
 ### Token kullanımı (`usage.py`)
 
 - **Tek biçim:** Her adaptör sonucunda Claude Code'un `modelUsage` biçiminde sayı verir (`adapters.base.model_usage`). Codex `turn.completed.usage`'dan (önbellekli kısım `input_tokens`'ın içinde olduğu için çıkarılır), Antigravity JSON'daki `usage`'dan, Ollama son satırdaki `prompt_eval_count` / `eval_count`'tan. Tanınmayan biçim sayı uydurmak yerine atlanır.
@@ -345,6 +359,7 @@ waiting_approval ──reject──► cancelled (worktree + branch silinir)
 - [x] **Kısıtlı mod** (`--restricted`) ve tur başına yalnızca Orbit'in MCP sunucuları
 - [x] **Rol başına model ve efor planı** (Claude ve Codex karşılıkları, kartta alan başına seviye, abonelikte olmayan modelde geri düşme)
 - [x] **Canlı orkestra paneli** (kim, hangi gerçek model, efor, ne yapıyor, token)
+- [x] **Otopilot:** kartın aşamalarını ölçülen koşullarla (değişiklik, kontroller, inceleme, işaretlenen aşama, kota) kendiliğinden ilerletme, tur sınırıyla
 - [x] **Token kullanımı:** tüm sağlayıcıların sayıları tek biçimde, günlük ve model başına özet, en çok harcayan turlar
 - [x] **Web önizlemesi:** sandbox'ta derleme, internetsiz tarayıcıda telefon ve masaüstü görüntüsü, konsol hataları sonraki tura
 - [ ] **Sıradaki adaylar:** iOS simülatör ekran görüntüsü (Mac'te doğrulanmalı)

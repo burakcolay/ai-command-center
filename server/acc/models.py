@@ -76,6 +76,8 @@ class Chat(Base):
     effort_choice: Mapped[str | None] = mapped_column(String(16))
     # Last message Claude's own session has seen; turns by other models after it are replayed.
     claude_seen_until: Mapped[int | None] = mapped_column()
+    # Otopilot: how many more turns may start on their own (0 = off). See acc.autopilot.
+    autopilot_left: Mapped[int] = mapped_column(default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

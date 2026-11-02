@@ -34,6 +34,9 @@ export default function App() {
   const [projectId, setProjectId] = useState<number | null>(null);
   const [modelChoice, setModelChoice] = useState<ModelChoice>("auto");
   const [effortChoice, setEffortChoice] = useState<string | null>(null);
+  // Otopilot: turns left for the open chat; before a new chat exists, just the wish.
+  const [autopilotLeft, setAutopilotLeft] = useState(0);
+  const [autopilotPending, setAutopilotPending] = useState(false);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [system, setSystem] = useState<SystemInfo | null>(null);
@@ -65,6 +68,8 @@ export default function App() {
     setProjectId(data.chat.project_id);
     setModelChoice(data.chat.model_choice ?? "auto");
     setEffortChoice(data.chat.effort_choice ?? null);
+    setAutopilotLeft(data.chat.autopilot_left ?? 0);
+    setAutopilotPending(false);
     setView("chat");
     setMenuOpen(false);
   }, []);
@@ -107,6 +112,8 @@ export default function App() {
       const e = m.event;
       setEvents((prev) => (prev[e.task_id] ? { ...prev, [e.task_id]: [...prev[e.task_id], e] } : prev));
       if (e.kind === "usage") void loadModels();
+    } else if (m.type === "chat") {
+      if (m.chat.id === chatIdRef.current) setAutopilotLeft(m.chat.autopilot_left);
     } else if (m.type === "approvals_changed") {
       void loadApprovals();
     }
@@ -127,6 +134,10 @@ export default function App() {
         id = (await api.createChat(projectId)).id;
         setChatId(id);
         setMessages([]);
+        if (autopilotPending && projectId !== null) {
+          setAutopilotLeft((await api.setAutopilot(id, true)).autopilot_left);
+        }
+        setAutopilotPending(false);
       }
       const r = await api.send(id, text, projectId, attachments, modelChoice, effortChoice);
       setMessages((prev) => [...prev, ...r.messages.filter((x) => !prev.some((y) => y.id === x.id))]);
@@ -150,8 +161,22 @@ export default function App() {
     setMessages([]);
     setModelChoice("auto");
     setEffortChoice(null);
+    setAutopilotLeft(0);
+    setAutopilotPending(false);
     setView("chat");
     setMenuOpen(false);
+  };
+
+  const toggleAutopilot = async (on: boolean) => {
+    if (chatId === null) {
+      setAutopilotPending(on); // switched on with the first message
+      return;
+    }
+    try {
+      setAutopilotLeft((await api.setAutopilot(chatId, on)).autopilot_left);
+    } catch (e) {
+      showError((e as Error).message);
+    }
   };
 
   const deleteChat = async (id: number) => {
@@ -216,6 +241,11 @@ export default function App() {
               onResume={resume}
               onLoadEvents={loadEvents}
               onError={showError}
+              autopilot={{
+                on: chatId === null ? autopilotPending : autopilotLeft > 0,
+                left: autopilotLeft,
+              }}
+              onAutopilotToggle={(on) => void toggleAutopilot(on)}
             />
           )}
           {view === "projects" && (

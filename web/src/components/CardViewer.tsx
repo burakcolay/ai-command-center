@@ -69,6 +69,32 @@ export function CardViewer({
             ))}
           </div>
         )}
+        {card && card.phases.length > 0 && (
+          <div className="border-b border-line px-5 py-3">
+            <div className="flex items-center gap-3">
+              <span className="label">Aşamalar</span>
+              <span className="flex gap-1" aria-hidden>
+                {card.phases.map((ph, i) => (
+                  <span
+                    key={i}
+                    className={`size-2 rounded-full ${ph.done ? "bg-white" : "ring-1 ring-faint"}`}
+                  />
+                ))}
+              </span>
+              <span className="font-mono text-[10.5px] text-dim">
+                {card.phases.filter((ph) => ph.done).length}/{card.phases.length} tamam
+              </span>
+            </div>
+            {(() => {
+              const next = card.phases.find((ph) => !ph.done);
+              return next ? (
+                <div className="mt-1 truncate text-[12px] text-dim" title={next.title}>
+                  Sıradaki: {next.title}
+                </div>
+              ) : null;
+            })()}
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {card === null ? (
             <div className="font-mono text-[11px] text-faint">yükleniyor…</div>
