@@ -8,13 +8,15 @@ discards everything. Nothing reaches the real project without that merge.
 
 from __future__ import annotations
 
+import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import func, select
 
-from acc import checks, config, github, gitops, memory, security, serialize
+from acc import checks, config, github, gitops, memory, preview, security, serialize
 from acc.db import session
 from acc.events import broker
 from acc.gitops import GitError
@@ -173,6 +175,7 @@ async def finish_turn(ws: Workspace, request: str, summary: str, adapter_id: str
                     finished_at=_now(),
                 )
             )
+        _update(ws.task_id, preview=None)  # it showed the code before this turn
         await run_checks(ws)
     await to_review(ws.task_id)
     return commit is not None
@@ -231,6 +234,45 @@ async def _workspace_of(task_id: int) -> Workspace:
     return Workspace(task_id, info.root, wt, wt / info.rel)
 
 
+def previewing(task_id: int) -> bool:
+    with session() as s:
+        t = s.get(Task, task_id)
+        return bool(t and (t.preview or {}).get("status") == "running")
+
+
+async def run_preview(task_id: int) -> None:
+    """Build in the sandbox and screenshot (acc.preview). The copy must not change meanwhile."""
+    ws = await _workspace_of(task_id)
+    log(task_id, "Önizleme hazırlanıyor (sandbox'ta derleme, kilitli tarayıcıda görüntü).")
+    result = await preview.run(task_id, ws.wt, ws.cwd)
+    _update(task_id, preview=result)
+    text = {
+        "ok": f"Önizleme hazır ({result.get('seconds')} sn, {len(result.get('errors') or [])} "
+        "tarayıcı hatası).",
+        "build_failed": "Önizleme: derleme başarısız.",
+    }.get(result["status"], f"Önizleme alınamadı: {result.get('reason', result['status'])}")
+    log(task_id, text)
+
+
+async def start_preview(task_id: int) -> dict[str, Any]:
+    with session() as s:
+        t = s.get(Task, task_id)
+        if t is None or t.kind != TaskKind.SESSION:
+            raise LookupError(task_id)
+        status, wt = TaskStatus(t.status), t.worktree
+    if status != TaskStatus.WAITING_APPROVAL or not wt:
+        raise InvalidTransition("Önizleme yalnızca asistan çalışmıyorken alınabilir.")
+    if previewing(task_id):
+        raise InvalidTransition("Önizleme zaten hazırlanıyor.")
+    return _update(task_id, preview={"status": "running", "started": int(time.time())})
+
+
+def preview_block(task_id: int) -> str:
+    with session() as s:
+        t = s.get(Task, task_id)
+        return preview.prompt_block(t.preview if t else None)
+
+
 async def decide(task_id: int, decision: str) -> dict[str, Any]:
     with session() as s:
         t = s.get(Task, task_id)
@@ -239,6 +281,8 @@ async def decide(task_id: int, decision: str) -> dict[str, Any]:
         status = TaskStatus(t.status)
     if status != TaskStatus.WAITING_APPROVAL:
         raise InvalidTransition("Asistan çalışırken değişiklikler üzerinde işlem yapılamaz.")
+    if previewing(task_id):
+        raise InvalidTransition("Önizleme hazırlanıyor; bitince tekrar dene.")
     ws = await _workspace_of(task_id)
 
     if decision == "approve":
@@ -286,7 +330,9 @@ async def decide(task_id: int, decision: str) -> dict[str, Any]:
         except GitError as e:
             raise InvalidTransition(str(e)) from None
         with session() as s:
+            t = s.get(Task, task_id)
             s.get(TaskStep, step_pk).status = StepStatus.REVERTED
+            t.preview = None
         log(task_id, f"Geri alındı: {title[:120]}")
         await run_checks(ws)
         await to_review(task_id)
@@ -384,6 +430,7 @@ async def cleanup(task_id: int, merged: bool) -> None:
         t = s.get(Task, task_id)
         project = s.get(Project, t.project_id) if t.project_id else None
         wt, branch = t.worktree, t.branch
+    shutil.rmtree(preview.folder(task_id), ignore_errors=True)
     if not (wt and branch and project):
         return
     try:
@@ -439,3 +486,7 @@ def recover() -> None:
         for task_id in ids:
             t = s.get(Task, task_id)
             t.status, t.stage = TaskStatus.WAITING_APPROVAL, TaskStage.MERGE
+        # A preview cut off by a restart would otherwise block the chat forever.
+        for t in s.scalars(select(Task).where(Task.kind == TaskKind.SESSION)):
+            if (t.preview or {}).get("status") == "running":
+                t.preview = {"status": "error", "reason": "Sunucu yeniden başladı."}

@@ -1,10 +1,19 @@
-import { ArrowUpRight, ChevronRight, GitBranch, GitMerge, GitPullRequest, Undo2 } from "lucide-react";
+import {
+  ArrowUpRight,
+  ChevronRight,
+  Eye,
+  GitBranch,
+  GitMerge,
+  GitPullRequest,
+  Undo2,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { toolTarget } from "../lib/format";
 import type { Decision, GitHubStatus, Task, TaskEvent, TaskStepState } from "../lib/types";
 import { ChecksPanel } from "./ChecksPanel";
 import { DiffView } from "./DiffView";
+import { PreviewPanel } from "./PreviewPanel";
 import { StatusDot } from "./StatusDot";
 
 interface Props {
@@ -104,6 +113,15 @@ export function ChangesCard({ task, events, onLoadEvents, onAsk, onError }: Prop
           </div>
         )}
 
+        {task.preview && task.preview.status !== "unsupported" && (
+          <div className="mt-4">
+            <PreviewPanel preview={task.preview} onFix={onAsk} />
+          </div>
+        )}
+        {task.preview?.status === "unsupported" && (
+          <p className="mt-3 font-mono text-[10.5px] text-faint">{task.preview.reason}</p>
+        )}
+
         {review && canUndo && (
           <div className="mt-4">
             <DiffView taskId={task.id} version={steps.map((s) => s.status).join()} />
@@ -143,6 +161,21 @@ export function ChangesCard({ task, events, onLoadEvents, onAsk, onError }: Prop
               <Btn disabled={busy || !canUndo} onClick={() => void decide("undo_last")}>
                 <span className="flex items-center gap-1.5">
                   <Undo2 size={13} /> Son değişikliği geri al
+                </span>
+              </Btn>
+              <Btn
+                disabled={busy || task.preview?.status === "running"}
+                onClick={() => {
+                  setBusy(true);
+                  api
+                    .preview(task.id)
+                    .catch((e) => onError((e as Error).message))
+                    .finally(() => setBusy(false));
+                }}
+                title="Uygulamayı sandbox'ta derleyip internetsiz bir tarayıcıda telefon ve masaüstü görüntüsünü alır"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Eye size={13} /> Önizle
                 </span>
               </Btn>
               {github?.repo && (

@@ -177,6 +177,7 @@ export interface Task {
   base_branch: string | null;
   merged_commit: string | null;
   pr_url: string | null;
+  preview: TaskPreview | null;
   checks: CheckResult[] | null;
   resume_at: string | null;
   steps: TaskStepState[];
@@ -229,6 +230,19 @@ export interface TeamPicture {
   };
   members: TeamMember[];
   usage: Record<string, { input: number; output: number; cached: number }>;
+}
+
+/** The app built in the sandbox and shown by a browser with no network. */
+export interface TaskPreview {
+  status: "running" | "ok" | "build_failed" | "unsupported" | "no_output" | "error";
+  images?: { phone?: string; desktop?: string };
+  errors?: string[];
+  blocked?: string[];
+  build?: string | null;
+  seconds?: number;
+  command?: string;
+  output?: string;
+  reason?: string;
 }
 
 export interface GitHubStatus {

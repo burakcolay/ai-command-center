@@ -146,6 +146,10 @@ class ChatService:
         self._orchestras: dict[int, Orchestra] = {}  # live team picture per running turn
         self._jobs: set[asyncio.Task[None]] = set()
 
+    def spawn(self, coro) -> None:
+        """Run a background job tied to the app's lifetime (e.g. a preview)."""
+        self._spawn(coro)
+
     def _spawn(self, coro) -> None:
         job = asyncio.create_task(coro)
         self._jobs.add(job)
@@ -374,6 +378,7 @@ class ChatService:
             if ws:
                 parts.append(_checks_block(sessions.checks_config(ws.task_id, ws.cwd)))
                 parts.append(sessions.failed_checks_block(ws.task_id))
+                parts.append(sessions.preview_block(ws.task_id))
             if not local:
                 parts.append(f"ÇIKTI KLASÖRÜ (raporlar ve tasarım dosyaları): {out_dir}\n\n")
                 rounds = [mid for mid in earlier if designs.folder(mid).is_dir()][:2]

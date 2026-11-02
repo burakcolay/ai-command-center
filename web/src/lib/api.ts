@@ -94,6 +94,7 @@ export const api = {
 
   diff: (taskId: number) => req<TaskDiff>(`/tasks/${taskId}/diff`),
   github: (taskId: number) => req<GitHubStatus>(`/tasks/${taskId}/github`),
+  preview: (taskId: number) => post<Task>(`/tasks/${taskId}/preview`, {}),
   events: (taskId: number) => req<TaskEvent[]>(`/tasks/${taskId}/events`),
   decide: (taskId: number, decision: Decision) =>
     post<Task>(`/tasks/${taskId}/decision`, { decision }),

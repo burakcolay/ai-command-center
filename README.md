@@ -59,6 +59,12 @@ Sohbete yazmaya devam ettikçe değişiklikler aynı kopyada birikir.
 
 **GitHub:** Projenin `origin`'i GitHub'daysa kartta **GitHub'da PR aç** butonu da çıkar. Değişiklikler `orbit/task-N` branch'ine push edilir ve bir pull request açılır; sonraki değişikliklerden sonra **PR'ı güncelle** ile aynı PR güncellenir. Bunun için GitHub CLI gerekir (`brew install gh && gh auth login`). Push ve PR yalnızca butona bastığınızda yapılır. Asistan kendisi push edemez, çünkü komutları internete yalnızca paket depoları üzerinden çıkabilir. Orbit token saklamaz.
 
+**Önizleme:** Web projelerinde kartta **Önizle** butonu vardır. Orbit uygulamayı derler ve telefon (393×852) ile masaüstü (1280×800) ekran görüntüsünü kartta gösterir.
+- **Derleme:** `package.json`'daki `build` betiği kontrollerle aynı sandbox'ta çalışır. Kökte `index.html` olan statik sitelerde derleme yapılmaz.
+- **Gösterim:** Sayfa Orbit'in kendi tarayıcısında açılır. JavaScript çalışır ama internet yoktur: dosyalar doğrudan derleme klasöründen verilir, dışarıya giden her istek engellenir, service worker kapalıdır. Arka uç gerektiren ekranlar verisiz görünür.
+- **Hatalar:** Tarayıcı konsolundaki hatalar ve engellenen istekler kartta listelenir. **Hataları düzelttir** düzeltme mesajını hazırlar; asistan hataları bir sonraki turda zaten görür. Derleme kırılırsa çıktısı gösterilir ve **Düzeltmesini iste** çıkar.
+- **Temizlik:** Derleme çıktısı önizlemeden sonra silinir, değişikliklere karışmaz. Önizleme sürerken o sohbete yazılamaz ve karar verilemez. Kod yeniden değişince eski önizleme kalkar; tekrar **Önizle**'ye basman gerekir.
+
 **Tasarımı uygulama:** Bir tasarımın altındaki **Bunu uygula** butonu, o tasarımı (görsel ve HTML) ekleyerek mesajı hazırlar. Siz gönderirsiniz. Tasarımlar internet erişimi ve JavaScript kapalı bir tarayıcıda çizilir.
 
 **Görsel ekleme:** Ataç butonu, yapıştırma (⌘V) veya sürükle-bırak ile ekran görüntüsü eklenebilir. Asistan görseli okur.

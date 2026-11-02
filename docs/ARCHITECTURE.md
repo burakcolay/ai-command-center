@@ -268,6 +268,17 @@ Kullanıcı model seçmez; iş bölümü koddadır.
 - **Ömür:** Birleştirme veya "Hepsini at" ile kapanır; sonraki değişiklik yeni bir oturum açar. Değişiklik içermeyen oturum, proje değiştirilince sessizce kapanır. Sohbet ya da proje silinince kopya ve branch temizlenir; kullanıcının projesine dokunulmaz.
 - **Kurulum önbelleği:** Kontrollerin kurulum adımı, komut ve bağımlılık dosyaları değişmedikçe aynı worktree'de bir kez çalışır (`.orbit-cache/setup.done`).
 
+### Önizleme (`preview.py`)
+
+- **Ne zaman:** Yalnızca kullanıcı **Önizle**'ye basınca (`POST /tasks/{id}/preview`, 202). Sonuç `tasks.preview` JSON'unda saklanır ve kartla birlikte gelir; durumlar: `running`, `ok`, `build_failed`, `unsupported`, `no_output`, `error`.
+- **Plan:** `package.json`'da `build` betiği varsa paket yöneticisi kilit dosyasından seçilir (pnpm / yarn / npm). Bağımlılık varsa kontrollerin kurulum adımı da çalışır. Yoksa kökte `index.html` aranır. Hiçbiri yoksa `unsupported`.
+- **Derleme:** `checks.run` ile, kontrollerle aynı sandbox'ta: yalnızca kopyaya yazar, ağ yalnızca paket depolarına açık.
+- **Çıktı klasörü:** `dist`, `build`, `out`, `public`, kök; içinde `index.html` olan ilk klasör.
+- **Gösterim:** Playwright Chromium, JavaScript açık. Sunucu süreci yoktur. Sayfa uydurma bir kökten açılır (`http://onizleme.orbit`); bu kökten gelen istekler `route.fulfill` ile derleme klasöründen yanıtlanır, metin dosyaları `charset=utf-8` ile gider. Yol çözümlemesi klasör dışına çıkamaz; uzantısız yollar tek sayfa uygulaması için `index.html`'e düşer. Diğer her istek `abort` edilir ve listelenir. Service worker engellidir.
+- **Görüntüler:** Telefon (393×852, dokunmatik, mobil) ve masaüstü (1280×800), 2x ölçek, `data/previews/<task>/`. `GET /previews/{task}/{phone|desktop}.png` yalnızca bu iki adı kabul eder.
+- **Hatalar:** Konsol hataları ve `pageerror` en fazla 12 tane toplanır. Orbit'in kendi engellemesinden doğan `net::ERR_FAILED` satırları süzülür. Sonraki turun istemine `preview_block` ile eklenir; internetin bilerek kapalı olduğu da belirtilir, böylece model yalnızca ağ yokluğundan doğan hatalar için çalışan kodu bozmaz.
+- **Temizlik ve kilit:** Derleme çıktısı `finally` içinde `gitops.discard` ile silinir. Önizleme sürerken o sohbete mesaj gönderilemez, karar verilemez, ikinci önizleme başlatılamaz (409). Sunucu yeniden başlarsa yarıda kalan önizleme `error` olur. Kodu değiştiren yeni bir tur ya da geri alma eski önizlemeyi siler (eski hatalar sonraki tura gitmez); oturum kapanınca görüntüler de silinir.
+
 ### Proje Hafızası
 
 - **Dosya:** Proje başına bir markdown dosyası (`MEMORY_DIR/<Proje>.md`, varsayılan `data/memory`).
@@ -327,6 +338,7 @@ waiting_approval ──reject──► cancelled (worktree + branch silinir)
 - [x] **Kısıtlı mod** (`--restricted`) ve tur başına yalnızca Orbit'in MCP sunucuları
 - [x] **Rol başına model ve efor planı** (Claude ve Codex karşılıkları, kartta alan başına seviye, abonelikte olmayan modelde geri düşme)
 - [x] **Canlı orkestra paneli** (kim, hangi gerçek model, efor, ne yapıyor, token)
-- [ ] **Sıradaki adaylar:** iOS simülatör ekran görüntüsü (Mac'te doğrulanmalı); web projeleri için canlı önizleme
+- [x] **Web önizlemesi:** sandbox'ta derleme, internetsiz tarayıcıda telefon ve masaüstü görüntüsü, konsol hataları sonraki tura
+- [ ] **Sıradaki adaylar:** iOS simülatör ekran görüntüsü (Mac'te doğrulanmalı)
 - [ ] Grok Build adaptörü (ücretsiz erişim doğrulanırsa)
 - [ ] Faz 4–8: dokümandaki sırayla

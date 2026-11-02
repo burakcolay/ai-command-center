@@ -23,6 +23,7 @@ from acc import (
     memory,
     notify,
     prefs,
+    preview,
     serialize,
     sessions,
     templates,
@@ -322,6 +323,9 @@ async def post_message(chat_id: int, body: MessageIn):
             select(Message.id).where(Message.chat_id == chat_id, Message.status == "streaming")
         ):
             raise HTTPException(409, "Önceki yanıt hâlâ yazılıyor.")
+        open_task = sessions.open_session_id(chat_id)
+        if open_task and sessions.previewing(open_task):
+            raise HTTPException(409, "Önizleme hazırlanıyor; bitince yaz.")
         if switching:
             c.project_id = body.project_id
             c.claude_session = None  # a different working folder needs a fresh conversation
@@ -439,6 +443,29 @@ async def task_github(task_id: int):
         return await sessions.github_status(task_id)
     except (LookupError, AttributeError, gitops.GitError):
         raise HTTPException(404) from None
+
+
+@router.post("/tasks/{task_id}/preview", status_code=202)
+async def task_preview(task_id: int):
+    """Build the app in the sandbox and screenshot it; the result arrives as a task update."""
+    try:
+        payload = await sessions.start_preview(task_id)
+    except LookupError:
+        raise HTTPException(404) from None
+    except InvalidTransition as e:
+        raise HTTPException(409, str(e)) from None
+    chat_service.spawn(sessions.run_preview(task_id))
+    return payload
+
+
+@router.get("/previews/{task_id}/{view}.png")
+def preview_image(task_id: int, view: str):
+    if view not in preview.VIEWS:
+        raise HTTPException(404)
+    path = preview.folder(task_id) / f"{view}.png"
+    if not path.is_file():
+        raise HTTPException(404)
+    return FileResponse(path, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/tasks/{task_id}/diff")
