@@ -48,9 +48,9 @@ KEEP_RECENT = 6  # newest messages always sent verbatim
 TEAM_ADAPTERS = ("claude_code", "mock")  # leads that can delegate to subagents
 NOTIFY_AFTER_S = 45  # long turns (research, big edits) end with a desktop notification
 RESUME_MARGIN_S = 60  # wait this long past the quota reset before continuing
-LOCAL_NOTE = (
-    "(Not: Claude şu an kullanılamıyor; bu yanıtı yerel model veriyor. Proje dosyalarına ve "
-    "web'e erişimi yok, değişiklik yapamaz.)\n\n"
+BACKUP_NOTE = (
+    "(Not: Claude şu an kullanılamıyor; bu yanıtı yedek model ({name}) veriyor. Proje "
+    "dosyalarına erişimi yok, değişiklik yapamaz.)\n\n"
 )
 
 SUMMARY_SYSTEM = """Sen bir konuşma özetleyicisisin. Konuşmayı, sonraki turlarda bağlam olarak
@@ -265,7 +265,7 @@ class ChatService:
             lead_tools, lead_system, team = tools, assistant.SYSTEM, None
 
         def build(with_history: bool) -> str:
-            parts = [LOCAL_NOTE if local else note]
+            parts = [BACKUP_NOTE.format(name=adapter.info.name) if local else note]
             if project_name:
                 where = f"\nÇALIŞMA KOPYASI: {cwd}" if ws else ""
                 parts.append(f"PROJE: {project_name} ({project_path}){where}\n\n")

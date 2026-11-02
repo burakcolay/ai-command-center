@@ -44,14 +44,15 @@ WORK_KINDS: dict[str, WorkKind] = {
             "Bağımsız inceleme",
             "Asistanın değişikliklerini birleştirmeden önce inceler. Yazandan farklı bir model "
             "tercih edilir; böylece biri kaçırdığını öteki yakalar.",
-            ["codex", "claude_code", "mock"],
+            ["codex", "gemini", "claude_code", "mock"],
             ("tools", "review"),
         ),
         WorkKind(
             "summarize",
             "Özetleme ve yedek",
-            "Uzun sohbetleri özetler; asistan kullanılamazsa sohbeti sürdürür. Yerel model önce.",
-            ["ollama", "claude_code", "mock"],
+            "Uzun sohbetleri özetler; asistan kullanılamazsa sohbeti sürdürür. Yerel model, "
+            "sonra Gemini: Claude'un kotası harcanmaz.",
+            ["ollama", "gemini", "claude_code", "mock"],
             ("chat",),
         ),
     ]

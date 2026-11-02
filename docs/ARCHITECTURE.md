@@ -72,8 +72,8 @@ Bu belge, ana proje dokümanındaki vizyonun nasıl uygulandığını ve hangi k
 
 **Üç iş türü vardır (`WORK_KINDS`):**
 - `assistant`: kullanıcının her mesajı. Sıra: Claude Code → Codex. Araç, kod ve web yeteneği gerekir.
-- `review`: değişikliklerin bağımsız incelemesi. Sıra: Codex → Claude Code; değişikliği yazan model `avoid` ile en sona itilir.
-- `summarize`: uzun sohbet özetleri ve Claude kullanılamadığında yedek sohbet. Sıra: Ollama → Claude Code.
+- `review`: değişikliklerin bağımsız incelemesi. Sıra: Codex → Gemini → Claude Code; değişikliği yazan model `avoid` ile en sona itilir.
+- `summarize`: uzun sohbet özetleri ve Claude kullanılamadığında yedek sohbet. Sıra: Ollama → Gemini → Claude Code.
 
 Sıralarda henüz kurulu olmayan adaptörler de (`codex`) yer alır. Adaptör kaydedildiği an devreye girer.
 
@@ -109,6 +109,14 @@ Sıralarda henüz kurulu olmayan adaptörler de (`codex`) yer alır. Adaptör ka
 - Gerçek bir ChatGPT çalıştırması bu makineden yapılamadı (OpenAI erişimi yok). Olay içerikleri belgelere göre sahte bir CLI ile test edildi; ilk gerçek çalıştırma kullanıcının Mac'inde son doğrulamadır.
 - İnceleme `read-only`, yazma işleri `workspace-write` sandbox'ında çalışır; ikisinde de ağ kapalıdır (web araması ayrı araçtır). Sistem talimatı istemin başına eklenir, çünkü Codex'te ayrı bir bayrağı yoktur.
 - "usage limit" mesajı `QuotaExceeded` olur; "try again in X hours Y minutes" okunur, yoksa 30 dakika beklenir.
+
+### Gemini (Antigravity CLI): doğrulanmış davranış (agy 1.4.12)
+
+- Gemini CLI, Haziran 2026'dan beri kişisel Google hesaplarını kabul etmiyor. AI Plus/Pro aboneliği terminalden Antigravity CLI (`agy`) ile kullanılır.
+- Kullanıcının Mac'inde doğrulandı: `agy -p "…" --output-format json < /dev/null > dosya` terminalsiz çalışır, 0 ile çıkar ve tek bir JSON yazar: `{conversation_id, status: "SUCCESS", response, duration_seconds, num_turns, usage}`. Bayraklar `agy --help`'ten alındı: `--json-schema`, `--effort`, `--sandbox`, `--add-dir`, `--print-timeout`.
+- Rolü yalnızca inceleme ve özettir; asla değişikliği yazan model olmaz (`coding=False`). Terminalsiz `agy` izin istemlerine cevap veremez, bu yüzden dosya düzenleyemez ve komut çalıştıramaz. Ayrıca `--sandbox` ile çalışır, `--dangerously-skip-permissions` hiç kullanılmaz. Özetler boş bir geçici klasörde çalışır.
+- Google API anahtarı ve Vertex/Cloud değişkenleri alt sürece verilmez; yalnızca giriş yapılmış hesap kullanılabilir. Sağlık kontrolü `agy models` çıkış koduna bakar.
+- Henüz doğrulanmadı: `--json-schema` sonucunun yeri. Adaptör ayrı bir alanı ya da JSON olarak yazılmış `response`'u kabul eder.
 
 ### Claude Code: doğrulanmış davranış (CLI 2.1.x)
 
@@ -240,7 +248,7 @@ waiting_approval ──reject──► cancelled (worktree + branch silinir)
 - [x] **Uzun sohbet özetleme** (önce yerel model)
 - [x] **Codex adaptörü:** ChatGPT girişi zorunlu, salt okunur inceleme ve yedek asistan; gerçek hesapla ilk deneme kullanıcıda
 - [x] **Ekip:** Claude alt ajanları (araştırmacı, tasarımcı, test yazarı, inceleyici) ve farklı modelle bağımsız inceleme + düzeltme turu
-- [ ] **Gemini:** Gemini CLI kişisel girişi kapattı; Antigravity CLI (`agy`) arka planda güvenilir çalışıyorsa inceleme ve araştırma rolüyle
+- [x] **Gemini (Antigravity CLI):** bağımsız inceleme ve özet; Google hesabıyla, kod yazmaz
 - [x] **Kalite kapıları** (sandbox'ta, ORBIT'in kendisi çalıştırır)
 - [x] **Kota dolunca otomatik bekleme ve devam**
 - [x] **macOS bildirimleri**

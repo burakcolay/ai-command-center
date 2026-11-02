@@ -18,6 +18,14 @@ BILLING_ENV_VARS = frozenset(
         "DEEPSEEK_API_KEY",
         "MOONSHOT_API_KEY",
         "KIMI_API_KEY",
+        # Google: an API key or Vertex/Cloud credentials would bill per token instead of
+        # using the Google account (AI Plus/Pro) the Antigravity CLI is signed in with.
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GOOGLE_GENAI_USE_VERTEXAI",
+        "GOOGLE_CLOUD_PROJECT",
+        "GOOGLE_CLOUD_LOCATION",
+        "GOOGLE_APPLICATION_CREDENTIALS",
     }
 )
 

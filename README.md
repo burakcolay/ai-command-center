@@ -66,7 +66,8 @@ Sohbete yazmaya devam ettikçe değişiklikler aynı kopyada birikir.
 **Ekip:** Asistan tek başına çalışmak zorunda değil; sen model seçmezsin, iş bölümünü kendisi yapar:
 - **Claude (lider):** İsteği anlar, planlar, kodu yazar. Büyük işlerde kendi uzman alt ajanlarına paralel iş verir: **Araştırmacı** (alt soruları ayrı ayrı araştırır), **Tasarımcı** (her tasarımı ayrı çizer), **Test yazarı**, **İnceleyici**. Sohbette canlı olarak "Tasarımcı: …" gibi kimin ne yaptığı görünür.
 - **Codex (ikinci göz):** Claude projede bir değişiklik yapınca Codex bunu dosyalara dokunmadan inceler. Ciddi bir sorun bulursa Claude düzeltir, katılmadığı maddeyi gerekçesiyle reddeder. Bulgular ve düzeltme cevabın altında görünür. Claude'un kotası biterse işi Codex devralır.
-- **Ollama (yerel):** Uzun sohbetleri ücretsiz özetler.
+- **Gemini (ikinci göz):** Google hesabınla (AI Plus/Pro) çalışır. Codex yoksa Claude'un değişikliklerini o inceler; uzun sohbet özetlerini de o çıkarır, böylece Claude'un kotası harcanmaz. Kod yazmaz.
+- **Ollama (yerel):** Varsa uzun sohbetleri ücretsiz özetler.
 
 Ekibin ne kadar çalışacağını **Ayarlar → Kalite** belirler:
 - **Ekonomik:** Tek asistan; alt ajan ve inceleme yok.
@@ -83,9 +84,17 @@ Asistan Claude Code ile çalışır. **Model Yöneticisi → İş dağılımı**
 
 **Seçim kuralları:**
 - Sağlıksız, kotası dolmuş veya ücretli API gerektiren model atlanır.
-- İnceleme, değişikliği yazandan farklı bir modele gider.
+- İnceleme, değişikliği yazandan farklı bir modele gider: önce Codex, sonra Gemini, ikisi de yoksa Claude ayrı bir oturumda.
 - Claude'un kotası %90'ı geçerse ve Codex kuruluysa iş ona geçer.
 - Claude hiç kullanılamıyorsa yerel model (Ollama) sohbeti sürdürür. Yerel model dosya okuyamaz ve değişiklik yapamaz.
+
+**Gemini'yi eklemek (Google hesabı):** Gemini CLI kişisel hesapları artık kabul etmiyor; Google'ın yerine çıkardığı Antigravity CLI kullanılır.
+
+```bash
+brew install --cask antigravity-cli
+```
+
+Sonra bir kez `agy` çalıştırıp Google hesabınla giriş yap ve **Model Yöneticisi → Kontrol et**'e bas. Orbit, Gemini'yi API anahtarıyla değil yalnızca giriş yaptığın hesapla çalıştırır; Google API anahtarı ortam değişkenleri ona verilmez. Antigravity'de ek kredi satın almadığın sürece abonelik dışı ücret oluşmaz.
 
 **Codex'i eklemek (ChatGPT aboneliği):**
 
@@ -160,7 +169,7 @@ ORBIT'te **Model Yöneticisi → Kontrol et**'e basın, Ollama "Kullanılabilir"
 
 ```
 server/acc/       FastAPI backend
-  adapters/       Model sağlayıcıları: Claude Code, Codex, Ollama
+  adapters/       Model sağlayıcıları: Claude Code, Codex, Gemini (Antigravity), Ollama
   assistant.py    Lider asistanın talimatı, araçları ve alt ajanları
   review.py       Bağımsız inceleme ve düzeltme turu
   chat.py         Sohbet turu: model seçimi, oturum, çıktılar

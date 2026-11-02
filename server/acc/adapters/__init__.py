@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 from acc import config
+from acc.adapters.antigravity import AntigravityAdapter
 from acc.adapters.base import Health, ModelAdapter, ModelState
 from acc.adapters.claude_code import ClaudeCodeAdapter
 from acc.adapters.codex import CodexAdapter
@@ -65,7 +66,12 @@ class Registry:
 
 
 def build_registry() -> Registry:
-    adapters: list[ModelAdapter] = [ClaudeCodeAdapter(), CodexAdapter(), OllamaAdapter()]
+    adapters: list[ModelAdapter] = [
+        ClaudeCodeAdapter(),
+        CodexAdapter(),
+        AntigravityAdapter(),
+        OllamaAdapter(),
+    ]
     if config.DEMO_MODE:
         adapters.append(MockAdapter())
     return Registry(adapters)

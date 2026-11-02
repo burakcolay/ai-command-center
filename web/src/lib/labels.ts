@@ -46,6 +46,7 @@ export const WINDOW_LABEL: Record<string, string> = {
 export const ADAPTER_LABEL: Record<string, string> = {
   claude_code: "Claude",
   codex: "Codex",
+  gemini: "Gemini",
   ollama: "Yerel",
   grok: "Grok",
   mock: "Demo",

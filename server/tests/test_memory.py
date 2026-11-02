@@ -61,7 +61,7 @@ def test_without_claude_a_local_model_keeps_talking(client):
         chat_id = new_chat(client, p["id"])
         msg = turn(client, chat_id, "Selam, bir satır ekle", p["id"])
         assert msg["content"] == "Merhaba!" and msg["adapter_id"] == "ollama"
-        assert "yerel model" in seen[-1]["messages"][-1]["content"]  # told it can't edit
+        assert "yedek model (Ollama" in seen[-1]["messages"][-1]["content"]  # told it can't edit
         assert client.get(f"/api/chats/{chat_id}").json()["tasks"] == []  # no copy opened
     finally:
         registry._adapters = original
