@@ -9,6 +9,7 @@ import type {
   Approval,
   Chat,
   Message,
+  ModelChoice,
   ModelInfo,
   Project,
   SystemInfo,
@@ -31,6 +32,7 @@ export default function App() {
   const [events, setEvents] = useState<Record<number, TaskEvent[]>>({});
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<number | null>(null);
+  const [modelChoice, setModelChoice] = useState<ModelChoice>("auto");
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [system, setSystem] = useState<SystemInfo | null>(null);
@@ -60,6 +62,7 @@ export default function App() {
     setMessages(data.messages);
     setTasks((prev) => ({ ...prev, ...Object.fromEntries(data.tasks.map((t) => [t.id, t])) }));
     setProjectId(data.chat.project_id);
+    setModelChoice(data.chat.model_choice ?? "auto");
     setView("chat");
     setMenuOpen(false);
   }, []);
@@ -123,7 +126,7 @@ export default function App() {
         setChatId(id);
         setMessages([]);
       }
-      const r = await api.send(id, text, projectId, attachments);
+      const r = await api.send(id, text, projectId, attachments, modelChoice);
       setMessages((prev) => [...prev, ...r.messages.filter((x) => !prev.some((y) => y.id === x.id))]);
       void loadChats();
     } catch (e) {
@@ -143,6 +146,7 @@ export default function App() {
   const newChat = () => {
     setChatId(null);
     setMessages([]);
+    setModelChoice("auto");
     setView("chat");
     setMenuOpen(false);
   };
@@ -194,6 +198,8 @@ export default function App() {
               events={events}
               projects={projects}
               projectId={projectId}
+              modelChoice={modelChoice}
+              onModelChoiceChange={setModelChoice}
               activity={activity}
               teams={teams}
               demoMode={system?.demo_mode ?? false}

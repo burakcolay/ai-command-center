@@ -113,3 +113,12 @@ async def test_an_unavailable_model_falls_back_to_the_default(tmp_path):
     assert second["x"]["model"] == "inherit" and second["y"]["model"] == "haiku"
     assert events[-1].kind == "result" and events[-1].data["text"] == "Tamam"
     assert any("aboneliğinde yok" in e.data.get("text", "") for e in events if e.kind == "log")
+
+
+def test_tokens_of_several_runs_in_one_turn_add_up():
+    o = Orchestra(1)
+    o.add_usage({"claude-opus-5-5": {"inputTokens": 10, "outputTokens": 5}})
+    o.add_usage({"claude-opus-5-5": {"inputTokens": 1, "outputTokens": 1}})
+    o.add_usage({"claude-sonnet-5-5": {"inputTokens": 3, "outputTokens": 2}})
+    assert o.usage["Opus 5.5"] == {"input": 11, "output": 6, "cached": 0}
+    assert o.usage["Sonnet 5.5"]["output"] == 2

@@ -7,6 +7,7 @@ import type {
   ChecksInfo,
   GitHubStatus,
   ProjectCard,
+  ModelChoice,
   ModelInfo,
   Project,
   SystemInfo,
@@ -69,11 +70,18 @@ export const api = {
   createChat: (project_id: number | null) => post<Chat>("/chats", { project_id }),
   chat: (id: number) => req<{ chat: Chat; messages: Message[]; tasks: Task[] }>(`/chats/${id}`),
   removeChat: (id: number) => req<void>(`/chats/${id}`, { method: "DELETE" }),
-  send: (chatId: number, content: string, project_id: number | null, attachments: string[]) =>
+  send: (
+    chatId: number,
+    content: string,
+    project_id: number | null,
+    attachments: string[],
+    model_choice: ModelChoice,
+  ) =>
     post<{ chat: Chat; messages: Message[] }>(`/chats/${chatId}/messages`, {
       content,
       project_id,
       attachments,
+      model_choice,
     }),
   upload: (name: string, data: string) =>
     post<{ id: string; name: string; mime: string }>("/uploads", { name, data }),

@@ -21,20 +21,20 @@ from tests.helpers import (  # noqa: F401
 
 def test_reply_streams_and_completes(client, rec):
     chat_id = new_chat(client)
-    m = turn(client, chat_id, "Merhaba, nasılsın?")
+    m = turn(client, chat_id, "Rakipleri araştır")
     assert m["content"].startswith("Demo yanıtı") and m["adapter_id"] == "mock"
     state = chat_state(client, chat_id)
-    assert state["chat"]["title"] == "Merhaba, nasılsın?"
+    assert state["chat"]["title"] == "Rakipleri araştır"
     assert state["tasks"] == []  # just talking creates nothing to review
     req = rec.requests[-1]
     assert req.system_prompt.startswith("Sen Orbit'sin") and "EKİP" in req.system_prompt
     assert req.effort == "high"
-    assert req.prompt.endswith("KULLANICININ MESAJI:\nMerhaba, nasılsın?")
+    assert req.prompt.endswith("KULLANICININ MESAJI:\nRakipleri araştır")
 
 
 def test_without_project_the_assistant_gets_web_and_a_scratch_folder(client, rec):
     chat_id = new_chat(client)
-    turn(client, chat_id, "Selam")
+    turn(client, chat_id, "Bir rapor yaz")
     req = rec.requests[-1]
     assert req.tools == [*assistant.SCRATCH_TOOLS, "Agent"] and "Bash" not in req.tools
     assert set(req.agents) == {"kesifci", "arastirmaci", "tasarimci"}
@@ -82,7 +82,7 @@ def test_unknown_project_is_refused(client):
 def test_quality_preference_sets_effort(client, rec):
     assert client.put("/api/preferences/quality", json={"value": "best"}).status_code == 200
     try:
-        turn(client, new_chat(client), "Detaylı düşün")
+        turn(client, new_chat(client), "Detaylı araştır")
         assert rec.requests[-1].effort == "xhigh"
     finally:
         client.put("/api/preferences/quality", json={"value": "balanced"})
@@ -137,3 +137,15 @@ def test_claude_keeps_its_own_conversation_and_rebuilds_a_lost_one(client):
     finally:
         registry._adapters = original
         registry._health.clear()
+
+
+def test_a_turn_that_breaks_early_ends_as_an_error_not_stuck(client, monkeypatch):
+    from acc.api import chat_service
+
+    async def boom(*a, **k):
+        raise RuntimeError("erken hata")
+
+    monkeypatch.setattr(chat_service.router, "pick", boom)
+    chat_id = new_chat(client)
+    m = wait_msg(client, chat_id, send(client, chat_id, "Merhaba"), "error")
+    assert "erken hata" in m["content"]

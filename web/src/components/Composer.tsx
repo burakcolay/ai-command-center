@@ -1,13 +1,24 @@
-import { ArrowUp, FileText, FolderKanban, LayoutTemplate, Paperclip, Square, X } from "lucide-react";
+import {
+  ArrowUp,
+  Cpu,
+  FileText,
+  FolderKanban,
+  LayoutTemplate,
+  Paperclip,
+  Square,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ACCEPT, isAttachable, type PendingAttachment, uploadFile } from "../lib/attachments";
-import type { Project, Template } from "../lib/types";
+import type { ModelChoice, Project, Template } from "../lib/types";
 import { TemplatePicker } from "./TemplatePicker";
 
 interface Props {
   projects: Project[];
   projectId: number | null;
   onProjectChange: (id: number | null) => void;
+  modelChoice: ModelChoice;
+  onModelChoiceChange: (c: ModelChoice) => void;
   onSend: (text: string, attachments: string[]) => Promise<void>;
   /** Set from outside (e.g. "Bunu uygula"); `nonce` makes repeats apply. */
   prefill?: { text: string; nonce: number; attachments?: PendingAttachment[] };
@@ -24,6 +35,17 @@ function selectPlaceholder(el: HTMLTextAreaElement) {
   if (end > start) el.setSelectionRange(start, end + 1);
   else el.setSelectionRange(el.value.length, el.value.length);
 }
+
+const MODEL_CHOICES: { id: ModelChoice; label: string; hint: string }[] = [
+  {
+    id: "auto",
+    label: "Otomatik",
+    hint: "Sohbet hafif modelle (Sonnet · low), gerçek iş kalite planıyla. Önerilen.",
+  },
+  { id: "haiku", label: "Haiku · hızlı", hint: "En az kota; kısa sorular ve basit işler." },
+  { id: "sonnet", label: "Sonnet · dengeli", hint: "Çoğu iş için yeterli; kotayı idareli kullanır." },
+  { id: "opus", label: "Opus · güçlü", hint: "Zor işler; kotayı en hızlı bitirir." },
+];
 
 const PLACEHOLDER = "Ne yapmak istediğini yaz…";
 
@@ -252,6 +274,24 @@ export function Composer(p: Props) {
           >
             <LayoutTemplate size={14} strokeWidth={1.6} />
           </button>
+          <label
+            className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-dim hover:text-fg"
+            title={MODEL_CHOICES.find((c) => c.id === p.modelChoice)?.hint}
+          >
+            <Cpu size={13} strokeWidth={1.6} className="shrink-0" />
+            <select
+              value={p.modelChoice}
+              onChange={(e) => p.onModelChoiceChange(e.target.value as ModelChoice)}
+              className="min-w-0 max-w-36 cursor-pointer truncate bg-transparent font-mono text-[11px] tracking-wide focus:outline-none"
+              aria-label="Model"
+            >
+              {MODEL_CHOICES.map((c) => (
+                <option key={c.id} value={c.id} className="bg-panel">
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <label
             className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-dim hover:text-fg"
             title="Proje seçersen asistan dosyaları okuyabilir ve değişiklik yapabilir (projenin bir kopyasında)."

@@ -225,6 +225,22 @@ Kullanıcı model seçmez; iş bölümü koddadır.
 
   `Orchestra` bunları `{lead, members, usage}` olarak WebSocket'e (`type: "team"`) yayınlar ve turun sonunda `messages.meta.team`'e yazar. İnceleyici de bir üye olarak görünür.
 
+### Sohbet mi, iş mi? (`intent.py`) ve model seçici
+
+- **Ölçüm (Claude Code 2.1.316, aynı kısa sohbet mesajı):**
+  - Opus, tüm araçlar ve ekip: yaklaşık 13,5 bin token.
+  - Sonnet, araçlar, ekip yok: yaklaşık 9,7 bin.
+  - Sonnet, araçsız: yaklaşık 5,9 bin.
+
+  Kısa bir turun çoğu sabit yüktür (Claude Code'un kendi talimatı, araç ve ekip tanımları); Opus token'ı da limitten en çok yiyendir.
+- **Otomatik:** `intent.is_light`, model çağrısı yapmadan karar verir. Ek yoksa, mesaj 600 karakterden kısaysa ve kelime başında bir iş ya da onay kökü yoksa (araştır, ekle, yap, tamam, devam…; "uygulama" ismi hariç) mesaj hafif kabul edilir.
+  - Hafif tur: Sonnet · low, salt okunur araçlar, ekip ve köprü yok.
+  - Hafif model mesajın aslında iş olduğuna karar verirse yalnızca `[[ORBIT:TAM_GUC]]` yazar. Bu işaret akışta tutulup ekrana hiç yansımaz; aynı mesaj aynı Claude oturumunda tam planla yeniden işlenir.
+  - Gerçek deneme: sohbet girişi Sonnet 5.5 · low ile yaklaşık 6,1 bin token tuttu. Kaçırılan bir iş mesajında hafif tur 38 çıktı token'ıyla işi geri verdi ve Opus işi yaptı.
+- **Seçici:** `chats.model_choice` (auto | haiku | sonnet | opus) her mesajla gönderilir ve sohbette kalır. Seçim yalnızca liderin modelini ve eforunu değiştirir (haiku · low, sonnet · medium, opus · plan eforu); araçlar ve ekip değişmez.
+- **Sağlamlık:** Tur, kendi hata yakalamasından önce bir hata verirse `_guarded` mesajı hata olarak bitirir; mesaj "yazılıyor" durumunda kalmaz.
+- **Token toplamı:** Bir turdaki bütün çalıştırmalar (hafif tur, tam tur, ayrı oturumda inceleme) modele göre toplanır.
+
 ### Görseller ve tasarımlar
 
 - **Yüklemeler** (`attachments.py`):

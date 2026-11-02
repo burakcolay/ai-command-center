@@ -67,10 +67,13 @@ export interface Project {
   created_at: string;
 }
 
+export type ModelChoice = "auto" | "haiku" | "sonnet" | "opus";
+
 export interface Chat {
   id: number;
   title: string;
   project_id: number | null;
+  model_choice: ModelChoice;
   created_at: string;
 }
 

@@ -153,13 +153,17 @@ class Orchestra:
         self.publish()
 
     def add_usage(self, model_usage: dict[str, Any] | None) -> None:
+        """Adds one run's per-model tokens; a turn can have several runs (light turn handed
+        back, review in a separate session, fixes), each counted once."""
         for model, u in (model_usage or {}).items():
-            self.usage[tiers.model_name(model)] = {
-                "input": int(u.get("inputTokens") or 0)
-                + int(u.get("cacheCreationInputTokens") or 0),
-                "output": int(u.get("outputTokens") or 0),
-                "cached": int(u.get("cacheReadInputTokens") or 0),
-            }
+            total = self.usage.setdefault(
+                tiers.model_name(model), {"input": 0, "output": 0, "cached": 0}
+            )
+            total["input"] += int(u.get("inputTokens") or 0) + int(
+                u.get("cacheCreationInputTokens") or 0
+            )
+            total["output"] += int(u.get("outputTokens") or 0)
+            total["cached"] += int(u.get("cacheReadInputTokens") or 0)
         self.publish()
 
     def reviewer(self, label: str, vendor: str, model: str | None, effort: str | None) -> None:

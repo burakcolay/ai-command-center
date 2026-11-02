@@ -27,6 +27,7 @@ from acc import (
     card,
     config,
     designs,
+    intent,
     memory,
     notify,
     review,
@@ -139,7 +140,16 @@ class ChatService:
         job.add_done_callback(self._jobs.discard)
 
     def start_reply(self, message_id: int) -> None:
-        self._spawn(self._reply(message_id))
+        self._spawn(self._guarded(message_id))
+
+    async def _guarded(self, message_id: int) -> None:
+        """A turn that fails before its own error handling must not stay "streaming" forever."""
+        try:
+            await self._reply(message_id)
+        except Exception as e:
+            self._finish(message_id, f"⚠ Beklenmeyen hata: {e!r}", "error")
+            self._runs.pop(message_id, None)
+            self._orchestras.pop(message_id, None)
 
     def _finish(
         self,
@@ -234,6 +244,7 @@ class ChatService:
             project_name = project.name if project else None
             project_path = Path(project.path) if project else None
             claude_session = chat.claude_session
+            model_pick = chat.model_choice or "auto"
             earlier = s.scalars(
                 select(Message.id)
                 .where(
@@ -275,7 +286,18 @@ class ChatService:
 
         # The Project Card, if the project has one: the lead and every specialist work from it.
         card_text = card.read(cwd) if project_path and not local else None
-        if adapter.info.id in TEAM_ADAPTERS and not local:
+        # Plain talk on "auto" goes light: middle model, low effort, read-only, no team.
+        light = (
+            model_pick == "auto"
+            and adapter.info.id in TEAM_ADAPTERS
+            and not local
+            and intent.is_light(question, attached)
+        )
+        if light:
+            plan = None
+            light_tools = [t for t in tools if t in assistant.READ_ONLY_TOOLS]
+            lead_tools, lead_system, team, mcp = light_tools, assistant.SYSTEM, None, None
+        elif adapter.info.id in TEAM_ADAPTERS and not local:
             # Also when there is no card yet: the lead must know Codex is there while writing it.
             codex = await self._codex_ready() if ws else False
             plan = assistant.setup(tools, card_text, codex, cwd)
@@ -284,9 +306,18 @@ class ChatService:
             plan = None
             lead_tools, lead_system, team, mcp = tools, assistant.SYSTEM, None, None
 
-        # The conductor's model and effort come from the plan for the chosen quality.
+        # The conductor's model and effort: the user's pick under the composer, the light
+        # setting for plain talk, else the plan for the chosen quality.
         lead_power = assistant.plan()["lead"]
-        if adapter.info.id in TEAM_ADAPTERS:  # Claude (or the demo standing in for it)
+        if light:
+            lead_power = tiers.Power("orta", "low")
+            lead_model = lead_power.model_for("claude_code")
+        elif model_pick != "auto" and adapter.info.id in TEAM_ADAPTERS:
+            picked = {"haiku": "hafif", "sonnet": "orta", "opus": "guclu"}[model_pick]
+            effort = {"haiku": "low", "sonnet": "medium"}.get(model_pick, lead_power.effort)
+            lead_power = tiers.Power(picked, effort)
+            lead_model = model_pick
+        elif adapter.info.id in TEAM_ADAPTERS:  # Claude (or the demo standing in for it)
             lead_model = assistant.lead_model()
         else:
             lead_model = lead_power.model_for(adapter.info.id)
@@ -298,6 +329,8 @@ class ChatService:
 
         def build(with_history: bool) -> str:
             parts = [BACKUP_NOTE.format(name=adapter.info.name) if local else note]
+            if light:
+                parts.append(intent.LIGHT_NOTE)
             if project_name:
                 where = f"\nÇALIŞMA KOPYASI: {cwd}" if ws else ""
                 parts.append(f"PROJE: {project_name} ({project_path}){where}\n\n")
@@ -354,7 +387,8 @@ class ChatService:
         buf: list[str] = []
         try:
             try:
-                text = await self._run(message_id, adapter, request(resume, new_session), buf)
+                first = request(resume, new_session)
+                text = await self._run(message_id, adapter, first, buf, hold=light)
             except SessionLost:
                 # The saved conversation is gone (e.g. the working folder changed): rebuild it.
                 buf.clear()
@@ -362,10 +396,23 @@ class ChatService:
                 with session() as s:
                     history = conversation(s, s.get(Chat, chat_id), user_id)
                 new_session = str(uuid.uuid4())
-                text = await self._run(message_id, adapter, request(None, new_session), buf)
+                rebuilt = request(None, new_session)
+                text = await self._run(message_id, adapter, rebuilt, buf, hold=light)
             if new_session:
                 with session() as s:
                     s.get(Chat, chat_id).claude_session = new_session
+            if light and intent.ESCALATE in text:
+                # The light turn saw real work in it: the same message, now with the full plan.
+                light = False
+                codex = await self._codex_ready() if ws else False
+                plan = assistant.setup(tools, card_text, codex, cwd)
+                lead_tools, lead_system, team, mcp = plan.tools, plan.system, plan.agents, plan.mcp
+                lead_power, lead_model = assistant.plan()["lead"], assistant.lead_model()
+                orchestra.set_lead(adapter.info.id, lead_model, lead_power.effort)
+                orchestra.set_roster(plan.agents, plan.labels or {}, plan.codex_areas or {})
+                buf.clear()
+                again = request(new_session or resume, None, prompt=build(with_history=False))
+                text = await self._run(message_id, adapter, again, buf)
             meta = await self._collect_outputs(message_id, out_dir, question, project_name)
             if ws:
                 self._activity(message_id, "Değişiklikler", "kontrol ediliyor")
@@ -403,15 +450,30 @@ class ChatService:
             self._codex_wrote.discard(message_id)
             self._orchestras.pop(message_id, None)
 
-    async def _run(self, message_id: int, adapter, req: RunRequest, buf: list[str]) -> str:
+    async def _run(
+        self, message_id: int, adapter, req: RunRequest, buf: list[str], hold: bool = False
+    ) -> str:
+        """Stream a run into the message. With `hold`, the first characters are held back so a
+        light turn's hand-back marker never flashes on screen."""
         run_id = uuid.uuid4().hex
         self._runs[message_id] = (adapter.info.id, run_id)
+        held: list[str] = []
+        muted = False
         async for ev in adapter.run(req, run_id):
             if ev.kind == "delta":
                 buf.append(ev.data["text"])
-                broker.publish(
-                    {"type": "message_delta", "message_id": message_id, "text": ev.data["text"]}
-                )
+                if muted:
+                    continue
+                if hold:
+                    held.append(ev.data["text"])
+                    start = "".join(held).lstrip()
+                    if start and intent.ESCALATE.startswith(start[: len(intent.ESCALATE)]):
+                        muted = len(start) >= len(intent.ESCALATE)
+                        continue  # still looks like the marker: wait for more
+                    hold, text = False, "".join(held)
+                else:
+                    text = ev.data["text"]
+                broker.publish({"type": "message_delta", "message_id": message_id, "text": text})
             elif ev.kind == "agent":
                 if orchestra := self._orchestras.get(message_id):
                     orchestra.apply(ev.data)
@@ -444,6 +506,8 @@ class ChatService:
                 tool = security.redact_data({**ev.data, "agent": ev.data.get("agent") or who})
                 broker.publish({"type": "message_activity", "message_id": message_id, "tool": tool})
             elif ev.kind == "result":
+                if orchestra := self._orchestras.get(message_id):
+                    orchestra.add_usage(ev.data.get("model_usage"))
                 return ev.data
             elif ev.kind == "error":
                 raise AdapterError(ev.data.get("text") or "Bilinmeyen hata")

@@ -8,7 +8,15 @@ import { Orchestra } from "../components/Orchestra";
 import { DotMatrix } from "../components/DotMatrix";
 import { attachmentUrl, type PendingAttachment } from "../lib/attachments";
 import { toolTarget } from "../lib/format";
-import type { DesignVariant, Message, Project, Task, TaskEvent, TeamPicture } from "../lib/types";
+import type {
+  DesignVariant,
+  Message,
+  ModelChoice,
+  Project,
+  Task,
+  TaskEvent,
+  TeamPicture,
+} from "../lib/types";
 
 const SUGGESTIONS = [
   "Aklımda bir uygulama fikri var, birlikte netleştirelim",
@@ -25,6 +33,8 @@ interface Props {
   teams: Record<number, TeamPicture>;
   projects: Project[];
   projectId: number | null;
+  modelChoice: ModelChoice;
+  onModelChoiceChange: (c: ModelChoice) => void;
   demoMode: boolean;
   onProjectChange: (id: number | null) => void;
   onSend: (text: string, attachments: string[]) => Promise<void>;
@@ -87,6 +97,8 @@ export function ChatView(p: Props) {
       projects={p.projects}
       projectId={p.projectId}
       onProjectChange={p.onProjectChange}
+      modelChoice={p.modelChoice}
+      onModelChoiceChange={p.onModelChoiceChange}
       onSend={p.onSend}
       prefill={prefill}
       onStop={busy ? () => p.onStop(busy.id) : undefined}

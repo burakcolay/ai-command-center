@@ -242,6 +242,8 @@ class MessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=100_000)  # long specs can be pasted
     project_id: int | None = None
     attachments: list[str] = Field(default_factory=list, max_length=6)
+    # The lead's model for this chat: Orbit decides (auto) or the user picks one.
+    model_choice: Literal["auto", "haiku", "sonnet", "opus"] | None = None
 
 
 @router.get("/chats")
@@ -318,6 +320,8 @@ async def post_message(chat_id: int, body: MessageIn):
             raise HTTPException(409, "Önceki yanıt hâlâ yazılıyor.")
         if switching:
             c.project_id = body.project_id
+        if body.model_choice:
+            c.model_choice = body.model_choice
             c.claude_session = None  # a different working folder needs a fresh conversation
         if c.title == "Yeni sohbet":
             c.title = content[:60]

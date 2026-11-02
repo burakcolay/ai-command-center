@@ -267,7 +267,7 @@ class Reviewer(Recorder):
 def test_the_lead_works_from_the_card(client, rec):
     p = _project_with_card(client)
     chat_id = new_chat(client, p["id"])
-    turn(client, chat_id, "Sayacı göster", p["id"])
+    turn(client, chat_id, "Sayacı ekrana ekle", p["id"])
     req = rec.requests[0]
     assert "PROJE KARTI" in req.prompt and "GET /sayac" in req.prompt
     assert {"backend-gelistirici", "frontend-gelistirici"} <= set(req.agents)
@@ -282,7 +282,7 @@ def test_with_codex_set_up_the_bridge_is_offered(client, fake_codex):
     try:
         p = _project_with_card(client)
         chat_id = new_chat(client, p["id"])
-        turn(client, chat_id, "Sayacı göster", p["id"])
+        turn(client, chat_id, "Sayacı ekrana ekle", p["id"])
         req = lead.requests[0]
         assert "backend-codex" in req.agents and mcp_codex.FULL_NAME in req.tools
         root = req.mcp_servers["mcpServers"]["orbit"]["args"]
