@@ -225,6 +225,13 @@ Kullanıcı model seçmez; iş bölümü koddadır.
 
   `Orchestra` bunları `{lead, members, usage}` olarak WebSocket'e (`type: "team"`) yayınlar ve turun sonunda `messages.meta.team`'e yazar. İnceleyici de bir üye olarak görünür.
 
+### Token kullanımı (`usage.py`)
+
+- **Tek biçim:** Her adaptör sonucunda Claude Code'un `modelUsage` biçiminde sayı verir (`adapters.base.model_usage`). Codex `turn.completed.usage`'dan (önbellekli kısım `input_tokens`'ın içinde olduğu için çıkarılır), Antigravity JSON'daki `usage`'dan, Ollama son satırdaki `prompt_eval_count` / `eval_count`'tan. Tanınmayan biçim sayı uydurmak yerine atlanır.
+- **Codex köprüsü:** MCP sunucusu Claude'un alt süreci olduğu için sayıları Orbit'in kendi klasöründeki tur dosyasına yazar (`data/runs/<mesaj>-codex.jsonl`, `--usage`). Orkestra tur bitince okur, ekler ve dosyayı siler.
+- **Saklama:** Orkestra her modeli sağlayıcısıyla birlikte toplar (`meta.team.usage[model] = {input, output, cached, vendor}`). Yeni tablo yok.
+- **Özet:** `GET /usage?days=7` (1–90): toplamlar, bilgisayarın yerel günlerine göre günlük dağılım, model başına toplam ve en çok harcayan 5 tur. Sağlayıcı bilgisi olmayan eski kayıtlarda sağlayıcı model adından çıkarılır.
+
 ### Sohbet mi, iş mi? (`intent.py`) ve model seçici
 
 - **Ölçüm (Claude Code 2.1.316, aynı kısa sohbet mesajı):**
@@ -338,6 +345,7 @@ waiting_approval ──reject──► cancelled (worktree + branch silinir)
 - [x] **Kısıtlı mod** (`--restricted`) ve tur başına yalnızca Orbit'in MCP sunucuları
 - [x] **Rol başına model ve efor planı** (Claude ve Codex karşılıkları, kartta alan başına seviye, abonelikte olmayan modelde geri düşme)
 - [x] **Canlı orkestra paneli** (kim, hangi gerçek model, efor, ne yapıyor, token)
+- [x] **Token kullanımı:** tüm sağlayıcıların sayıları tek biçimde, günlük ve model başına özet, en çok harcayan turlar
 - [x] **Web önizlemesi:** sandbox'ta derleme, internetsiz tarayıcıda telefon ve masaüstü görüntüsü, konsol hataları sonraki tura
 - [ ] **Sıradaki adaylar:** iOS simülatör ekran görüntüsü (Mac'te doğrulanmalı)
 - [ ] Grok Build adaptörü (ücretsiz erişim doğrulanırsa)

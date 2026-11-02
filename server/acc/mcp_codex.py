@@ -69,7 +69,11 @@ SYSTEM = """Sen bir ekipte çalışan kıdemli bir yazılım geliştiricisin. T�
 
 
 async def run_task(
-    root: Path, task: str, power: dict[str, str], codex: CodexAdapter
+    root: Path,
+    task: str,
+    power: dict[str, str],
+    codex: CodexAdapter,
+    usage_file: Path | None = None,
 ) -> tuple[str, bool]:
     """Returns (text for Claude, is_error). `power` is the area's model and effort."""
     req = RunRequest(
@@ -93,6 +97,9 @@ async def run_task(
             elif ev.kind == "error":
                 return f"{UNAVAILABLE}: Codex başarısız oldu: {ev.data.get('text')}", True
             elif ev.kind == "result":
+                if usage_file and ev.data.get("model_usage"):
+                    with usage_file.open("a") as f:  # Orbit adds it to the turn's totals
+                        f.write(json.dumps(ev.data["model_usage"]) + "\n")
                 text = (ev.data.get("text") or "").strip() or "(Codex özet yazmadı.)"
                 if files:
                     text += "\n\nDeğişen dosyalar: " + ", ".join(dict.fromkeys(files))
@@ -106,7 +113,12 @@ async def run_task(
     return f"{UNAVAILABLE}: Codex sonuç vermeden durdu.", True
 
 
-async def serve(root: Path, areas: dict[str, dict[str, str]], codex: CodexAdapter) -> None:
+async def serve(
+    root: Path,
+    areas: dict[str, dict[str, str]],
+    codex: CodexAdapter,
+    usage_file: Path | None = None,
+) -> None:
     loop = asyncio.get_running_loop()
     reader = asyncio.StreamReader(limit=16 * 1024 * 1024)
     await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
@@ -126,7 +138,7 @@ async def serve(root: Path, areas: dict[str, dict[str, str]], codex: CodexAdapte
         else:
             area = str(args.get("alan") or "")
             power = areas.get(area) or (next(iter(areas.values())) if areas else {})
-            text, err = await run_task(root, task, power, codex)
+            text, err = await run_task(root, task, power, codex, usage_file)
         result = {"content": [{"type": "text", "text": text}], "isError": err}
         await send({"jsonrpc": "2.0", "id": msg_id, "result": result})
 
@@ -175,15 +187,26 @@ def config(root: Path, areas: dict[str, dict[str, str]]) -> dict[str, Any]:
     return {"mcpServers": {SERVER: {"type": "stdio", "command": sys.executable, "args": args}}}
 
 
+def with_usage_file(mcp: dict[str, Any] | None, path: Path) -> dict[str, Any] | None:
+    """The same config, with Codex's token counts written to `path` for this turn."""
+    server = ((mcp or {}).get("mcpServers") or {}).get(SERVER)
+    if not server:
+        return mcp
+    server = {**server, "args": [*server["args"], "--usage", str(path)]}
+    return {**mcp, "mcpServers": {**mcp["mcpServers"], SERVER: server}}
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--root", required=True)
     p.add_argument("--areas", default="{}")
+    p.add_argument("--usage", default="")
     a = p.parse_args()
     root = Path(a.root).resolve()
     if not root.is_dir():
         sys.exit(f"klasör yok: {root}")
-    asyncio.run(serve(root, json.loads(a.areas), CodexAdapter()))
+    usage = Path(a.usage) if a.usage else None
+    asyncio.run(serve(root, json.loads(a.areas), CodexAdapter(), usage))
 
 
 if __name__ == "__main__":

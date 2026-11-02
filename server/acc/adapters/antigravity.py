@@ -39,6 +39,7 @@ from acc.adapters.base import (
     QuotaExceeded,
     RunRequest,
     Usage,
+    model_usage,
 )
 from acc.cost_guard import sanitized_env
 
@@ -201,7 +202,10 @@ class AntigravityAdapter(ModelAdapter):
             return
         if req.stream_text and response:
             yield AdapterEvent("delta", {"text": response})
-        yield AdapterEvent("result", {"text": response, "structured": structured})
+        used = model_usage(req.model or str(data.get("model") or "Gemini"), data.get("usage"))
+        yield AdapterEvent(
+            "result", {"text": response, "structured": structured, "model_usage": used}
+        )
 
     async def _once(self, req: RunRequest, run_id: str, retry: bool) -> dict[str, Any]:
         # Summaries have no project: give agy an empty folder rather than the home directory.

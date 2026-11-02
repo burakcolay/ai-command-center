@@ -142,3 +142,13 @@ def test_a_new_change_or_undo_drops_the_old_preview(client):
     assert task(client, chat_id, task_id)["preview"] is None
     assert decide(client, task_id, "reject").status_code == 200
     assert not preview.folder(task_id).exists()  # screenshots go with the copy
+
+
+def test_a_build_folder_pointing_outside_the_copy_is_refused(client, tmp_path):
+    outside = tmp_path / "gizli"
+    outside.mkdir()
+    (outside / "index.html").write_text("<p>gizli</p>")
+    p, chat_id, task_id = _project_with(client, {"index.html": "<p>site</p>"})
+    (sessions.worktree_path(chat_id) / "dist").symlink_to(outside)
+    got = _preview(client, chat_id, task_id)
+    assert got["status"] == "error" and "dışında" in got["reason"]

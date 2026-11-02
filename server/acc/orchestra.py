@@ -9,6 +9,8 @@ and how many tokens it took.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 from acc import tiers
@@ -45,6 +47,7 @@ class Orchestra:
         self.usage: dict[str, dict[str, int]] = {}
         self.roster: dict[str, dict[str, Any]] = {}  # subagent name -> label, model, effort
         self.codex_areas: dict[str, dict[str, str]] = {}
+        self.codex_usage_file: Path | None = None
 
     # ---------- setup ----------
 
@@ -152,12 +155,16 @@ class Orchestra:
             self.lead["activity"] = line
         self.publish()
 
-    def add_usage(self, model_usage: dict[str, Any] | None) -> None:
+    def add_usage(self, model_usage: dict[str, Any] | None, vendor: str = "claude_code") -> None:
         """Adds one run's per-model tokens; a turn can have several runs (light turn handed
-        back, review in a separate session, fixes), each counted once."""
+        back, review in a separate session, fixes, Codex through the bridge), each counted
+        once. Every provider reports in Claude Code's `modelUsage` shape (adapters.base)."""
         for model, u in (model_usage or {}).items():
+            if not isinstance(u, dict):
+                continue
             total = self.usage.setdefault(
-                tiers.model_name(model), {"input": 0, "output": 0, "cached": 0}
+                tiers.model_name(model),
+                {"input": 0, "output": 0, "cached": 0, "vendor": VENDOR.get(vendor, vendor)},
             )
             total["input"] += int(u.get("inputTokens") or 0) + int(
                 u.get("cacheCreationInputTokens") or 0
@@ -191,7 +198,25 @@ class Orchestra:
             m["activity"] = "" if found is None else f"{found} bulgu"
         self.publish()
 
+    def add_codex_usage(self) -> None:
+        """What Codex used through the bridge this turn (it runs in Claude's MCP process, so
+        it reports through a file Orbit gave it)."""
+        if not self.codex_usage_file:
+            return
+        try:
+            lines = self.codex_usage_file.read_text().splitlines()
+        except OSError:
+            return
+        finally:
+            self.codex_usage_file.unlink(missing_ok=True)
+        for line in lines[:200]:
+            try:
+                self.add_usage(json.loads(line), "codex")
+            except (json.JSONDecodeError, AttributeError):
+                continue
+
     def finish(self) -> dict[str, Any]:
+        self.add_codex_usage()
         self.lead["status"] = "done"
         self.lead["activity"] = ""
         for m in self.members:

@@ -125,6 +125,45 @@ class AdapterEvent:
         return asdict(self)
 
 
+_IN = ("input_tokens", "inputTokens", "prompt_tokens", "promptTokenCount", "prompt_eval_count")
+_OUT = ("output_tokens", "outputTokens", "completion_tokens", "candidatesTokenCount", "eval_count")
+_CACHED = (
+    "cached_input_tokens",
+    "cachedInputTokens",
+    "cache_read_input_tokens",
+    "cacheReadInputTokens",
+    "cachedContentTokenCount",
+)
+
+
+def _count(raw: dict[str, Any], keys: tuple[str, ...]) -> int:
+    for k in keys:
+        v = raw.get(k)
+        if isinstance(v, int | float) and not isinstance(v, bool):
+            return max(0, int(v))
+    return 0
+
+
+def model_usage(model: str, raw: Any, cached_in_input: bool = True) -> dict[str, Any] | None:
+    """Any provider's token counts in the shape Claude Code reports (`modelUsage`), so one
+    place adds them up. OpenAI-style counts include the cached part in the input; Claude's
+    don't. Unknown shapes give None rather than a wrong number."""
+    if not isinstance(raw, dict):
+        return None
+    if raw and all(isinstance(v, dict) for v in raw.values()):  # already per model
+        out = {}
+        for name, part in raw.items():
+            out.update(model_usage(str(name), part, cached_in_input) or {})
+        return out or None
+    total_in, out_tokens, cached = _count(raw, _IN), _count(raw, _OUT), _count(raw, _CACHED)
+    if not (total_in or out_tokens or cached):
+        return None
+    fresh = max(0, total_in - cached) if cached_in_input else total_in
+    return {
+        model: {"inputTokens": fresh, "outputTokens": out_tokens, "cacheReadInputTokens": cached}
+    }
+
+
 class AdapterError(Exception):
     """Raised when a run cannot start or must be aborted (auth, cost guard, crash)."""
 

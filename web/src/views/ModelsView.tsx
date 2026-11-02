@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { ADAPTER_LABEL } from "../lib/labels";
 import { ModelDot } from "../components/StatusDot";
+import { UsagePanel } from "../components/UsagePanel";
 import { BILLING_LABEL, MODEL_STATE_LABEL, USAGE_SOURCE_LABEL, WINDOW_LABEL } from "../lib/labels";
 import type { ModelInfo, WorkRoute } from "../lib/types";
 import { Page } from "./Page";
@@ -30,10 +31,12 @@ const PLANNED = [
 export function ModelsView({
   models,
   onRefresh,
+  onOpenChat,
   onError,
 }: {
   models: ModelInfo[];
   onRefresh: () => Promise<void>;
+  onOpenChat: (chatId: number) => void;
   onError: (msg: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -53,6 +56,9 @@ export function ModelsView({
         </button>
       }
     >
+      <UsagePanel onOpenChat={onOpenChat} onError={onError} />
+
+      <div className="label mt-10 mb-2">Modeller</div>
       <div className="space-y-3">
         {models.map((m) => (
           <div key={m.id} className="rounded-xl border border-line bg-panel p-4">

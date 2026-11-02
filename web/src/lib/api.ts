@@ -1,4 +1,5 @@
 import type {
+  UsageSummary,
   Approval,
   Chat,
   Decision,
@@ -87,6 +88,7 @@ export const api = {
       effort_choice,
     }),
   catalog: () => req<CatalogProvider[]>("/catalog"),
+  usage: (days: number) => req<UsageSummary>(`/usage?days=${days}`),
   upload: (name: string, data: string) =>
     post<{ id: string; name: string; mime: string }>("/uploads", { name, data }),
   cancelMessage: (id: number) => post<Message>(`/messages/${id}/cancel`, {}),

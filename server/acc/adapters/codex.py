@@ -36,6 +36,7 @@ from acc.adapters.base import (
     QuotaExceeded,
     RunRequest,
     Usage,
+    model_usage,
 )
 from acc.cost_guard import sanitized_env
 
@@ -58,6 +59,7 @@ def _model_unavailable(message: str) -> bool:
 
 
 FALLBACK_COOLDOWN_S = 30 * 60
+DEFAULT_MODEL_LABEL = "Codex"  # usage key when the account default model ran (no -m)
 _RETRY_IN = re.compile(r"try again in\s+(?:(\d+)\s*hours?)?\s*(?:(\d+)\s*min)?", re.I)
 
 
@@ -272,8 +274,10 @@ class CodexAdapter(ModelAdapter):
                                 structured = json.loads(last_message)
                             except json.JSONDecodeError:
                                 structured = None
+                        used = model_usage(req.model or DEFAULT_MODEL_LABEL, msg.get("usage"))
                         yield AdapterEvent(
-                            "result", {"text": last_message, "structured": structured}
+                            "result",
+                            {"text": last_message, "structured": structured, "model_usage": used},
                         )
                 await proc.wait()
                 if not finished:

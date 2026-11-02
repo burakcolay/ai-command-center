@@ -127,6 +127,13 @@ Lider, kartta her alan için bundan daha düşük bir seviye seçebilir ama daha
 
 Tur bitince panel mesajda özet olarak kalır ve modele göre toplam girdi ve çıktı token'ını gösterir.
 
+**Token kullanımı:** **Model Yöneticisi**'nin en üstünde son 7 ya da 30 günün özeti var:
+- günlük harcama (nokta grafiği),
+- model başına girdi, çıktı ve önbellekten okunan token ile tur sayısı (Claude, Codex, Gemini, yerel),
+- en çok token harcayan 5 tur; tıklayınca o sohbet açılır.
+
+Sayılar sağlayıcıların kendi bildirdiği değerlerdir; Codex'in köprü üzerinden yaptığı işler de turun toplamına eklenir. Ek model çağrısı yapılmaz.
+
 Ekibin ne kadar çalışacağını **Ayarlar → Kalite** belirler:
 - **Ekonomik:** Tek asistan, Sonnet · medium; alt ajan ve inceleme yok.
 - **Dengeli:** Yukarıdaki plan. Her değişikliği başka bir model inceler; başka model yoksa yalnızca büyük değişiklikler incelenir.

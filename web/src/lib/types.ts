@@ -229,7 +229,28 @@ export interface TeamPicture {
     activity: string;
   };
   members: TeamMember[];
-  usage: Record<string, { input: number; output: number; cached: number }>;
+  usage: Record<string, { input: number; output: number; cached: number; vendor?: string }>;
+}
+
+interface TokenCounts {
+  input: number;
+  output: number;
+  cached: number;
+}
+
+/** Where the tokens went (GET /usage). */
+export interface UsageSummary {
+  days: number;
+  totals: TokenCounts & { turns: number };
+  by_day: (TokenCounts & { date: string; turns: number })[];
+  by_model: (TokenCounts & { model: string; vendor: string; turns: number })[];
+  top_turns: (TokenCounts & {
+    message_id: number;
+    chat_id: number;
+    chat_title: string;
+    date: string;
+    models: string[];
+  })[];
 }
 
 /** The app built in the sandbox and shown by a browser with no network. */

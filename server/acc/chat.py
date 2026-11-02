@@ -29,6 +29,7 @@ from acc import (
     config,
     designs,
     intent,
+    mcp_codex,
     memory,
     notify,
     review,
@@ -355,6 +356,9 @@ class ChatService:
             lead_model = lead_power.model_for(adapter.info.id)
         orchestra = Orchestra(message_id)
         self._orchestras[message_id] = orchestra
+        if mcp:
+            orchestra.codex_usage_file = _codex_usage_file(message_id)
+            mcp = mcp_codex.with_usage_file(mcp, orchestra.codex_usage_file)
         orchestra.set_lead(adapter.info.id, lead_model, lead_effort)
         if plan:
             orchestra.set_roster(plan.agents, plan.labels or {}, plan.codex_areas or {})
@@ -454,6 +458,9 @@ class ChatService:
                 codex = await self._codex_ready() if ws else False
                 plan = assistant.setup(tools, card_text, codex, cwd)
                 lead_tools, lead_system, team, mcp = plan.tools, plan.system, plan.agents, plan.mcp
+                if mcp:
+                    orchestra.codex_usage_file = _codex_usage_file(message_id)
+                    mcp = mcp_codex.with_usage_file(mcp, orchestra.codex_usage_file)
                 lead_power, lead_model = assistant.plan()["lead"], assistant.lead_model()
                 lead_effort = lead_power.effort
                 orchestra.set_lead(adapter.info.id, lead_model, lead_effort)
@@ -534,7 +541,7 @@ class ChatService:
                 broker.publish({"type": "message_activity", "message_id": message_id, "tool": tool})
             elif ev.kind == "result":
                 if orchestra := self._orchestras.get(message_id):
-                    orchestra.add_usage(ev.data.get("model_usage"))
+                    orchestra.add_usage(ev.data.get("model_usage"), adapter.info.id)
                 return ev.data.get("text") or "".join(buf)
             elif ev.kind == "error":
                 raise AdapterError(ev.data.get("text") or "Bilinmeyen hata")
@@ -569,7 +576,7 @@ class ChatService:
                 broker.publish({"type": "message_activity", "message_id": message_id, "tool": tool})
             elif ev.kind == "result":
                 if orchestra := self._orchestras.get(message_id):
-                    orchestra.add_usage(ev.data.get("model_usage"))
+                    orchestra.add_usage(ev.data.get("model_usage"), adapter.info.id)
                 return ev.data
             elif ev.kind == "error":
                 raise AdapterError(ev.data.get("text") or "Bilinmeyen hata")
@@ -768,6 +775,14 @@ class ChatService:
         for adapter_id, run_id in list(self._runs.values()):
             if adapter := self.registry.get(adapter_id):
                 await adapter.cancel(run_id)
+
+
+def _codex_usage_file(message_id: int) -> Path:
+    """Where the Codex bridge writes this turn's token counts (Orbit's own folder, not one
+    the model works in)."""
+    folder = config.DATA_DIR / "runs"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / f"{message_id}-codex.jsonl"
 
 
 def _checks_block(cfg: dict[str, Any]) -> str:

@@ -123,7 +123,9 @@ class MockAdapter(ModelAdapter):
         text = " ".join(parts) + "\n\n- Demo modunda gerçek bir model çalışmaz."
         async for ev in self._say(text, run_id, req.stream_text):
             yield ev
-        yield AdapterEvent("result", {"text": text})
+        # Rough counts (4 characters a token), so the usage screen has something to show.
+        used = {req.model or "demo": {"inputTokens": len(req.prompt) // 4, "outputTokens": 40}}
+        yield AdapterEvent("result", {"text": text, "model_usage": used})
 
     async def _team(self, req: RunRequest, run_id: str) -> AsyncIterator[AdapterEvent]:
         models = {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5"}

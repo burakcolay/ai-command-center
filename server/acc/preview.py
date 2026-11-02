@@ -173,6 +173,8 @@ async def run(task_id: int, wt: Path, cwd: Path) -> dict[str, Any]:
         root = output_dir(cwd)
         if root is None:
             return {"status": "no_output", "reason": "Derlemeden sonra index.html bulunamadı."}
+        if not root.is_relative_to(wt.resolve()):  # e.g. dist -> ~ : never serve outside the copy
+            return {"status": "error", "reason": "Derleme klasörü projenin kopyası dışında."}
         shot = await render(root, folder(task_id))
         return {
             "status": "ok",

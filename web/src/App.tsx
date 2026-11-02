@@ -236,7 +236,12 @@ export default function App() {
             />
           )}
           {view === "models" && (
-            <ModelsView models={models} onRefresh={() => loadModels(true)} onError={showError} />
+            <ModelsView
+              models={models}
+              onRefresh={() => loadModels(true)}
+              onOpenChat={(id) => void openChat(id).catch((e) => showError(e.message))}
+              onError={showError}
+            />
           )}
           {view === "settings" && (
             <SettingsView

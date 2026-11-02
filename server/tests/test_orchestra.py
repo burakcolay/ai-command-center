@@ -68,7 +68,12 @@ def test_orchestra_follows_recorded_events():
     assert backend["label"] == "Backend geliştirici" and backend["actual"] == "Sonnet 5.5"
     assert (backend["effort"], backend["tokens"], backend["status"]) == ("medium", 15404, "done")
     assert codex["vendor"] == "Codex" and codex["model"] == "GPT-6.1 Sol"
-    assert snap["usage"]["Opus 5.5"] == {"input": 100, "output": 50, "cached": 0}
+    assert snap["usage"]["Opus 5.5"] == {
+        "input": 100,
+        "output": 50,
+        "cached": 0,
+        "vendor": "Claude",
+    }
 
 
 def test_a_turn_keeps_its_team_picture(client, rec):
@@ -120,5 +125,5 @@ def test_tokens_of_several_runs_in_one_turn_add_up():
     o.add_usage({"claude-opus-5-5": {"inputTokens": 10, "outputTokens": 5}})
     o.add_usage({"claude-opus-5-5": {"inputTokens": 1, "outputTokens": 1}})
     o.add_usage({"claude-sonnet-5-5": {"inputTokens": 3, "outputTokens": 2}})
-    assert o.usage["Opus 5.5"] == {"input": 11, "output": 6, "cached": 0}
+    assert o.usage["Opus 5.5"] == {"input": 11, "output": 6, "cached": 0, "vendor": "Claude"}
     assert o.usage["Sonnet 5.5"]["output"] == 2

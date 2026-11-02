@@ -25,6 +25,7 @@ from acc.adapters.base import (
     ModelState,
     RunRequest,
     Usage,
+    model_usage,
 )
 
 KEEP_ALIVE = "2m"  # unload soon after use: RAM is shared with everything else on a 16 GB Mac
@@ -132,6 +133,7 @@ class OllamaAdapter(ModelAdapter):
         yield AdapterEvent("log", {"text": f"Model: {model} (yerel)"})
 
         buf: list[str] = []
+        counts: dict[str, Any] = {}
         try:
             async with (
                 self._client(timeout=None) as c,
@@ -154,6 +156,7 @@ class OllamaAdapter(ModelAdapter):
                         if req.stream_text:
                             yield AdapterEvent("delta", {"text": piece})
                     if d.get("done"):
+                        counts = d  # prompt_eval_count / eval_count come on the last line
                         break
         except httpx.HTTPError as e:
             raise AdapterError(f"Ollama bağlantı hatası: {e}") from e
@@ -167,7 +170,10 @@ class OllamaAdapter(ModelAdapter):
                 structured = json.loads(text)
             except json.JSONDecodeError:
                 raise AdapterError("Yerel model geçerli JSON döndürmedi.") from None
-        yield AdapterEvent("result", {"text": text, "structured": structured, "model": model})
+        used = model_usage(model, counts, cached_in_input=False)
+        yield AdapterEvent(
+            "result", {"text": text, "structured": structured, "model": model, "model_usage": used}
+        )
 
     async def cancel(self, run_id: str) -> None:
         self._cancelled.add(run_id)

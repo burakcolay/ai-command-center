@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -28,6 +28,7 @@ from acc import (
     sessions,
     templates,
     tiers,
+    usage,
 )
 from acc.adapters import registry
 from acc.chat import ChatService
@@ -520,6 +521,12 @@ async def list_models(fresh: bool = False):
             }
         )
     return out
+
+
+@router.get("/usage")
+def usage_summary(days: int = Query(7, ge=1, le=90)):
+    """Tokens per model and per day, and the turns that used the most."""
+    return usage.summary(days)
 
 
 @router.get("/catalog")
