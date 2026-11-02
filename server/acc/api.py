@@ -25,6 +25,7 @@ from acc import (
     serialize,
     sessions,
     templates,
+    tiers,
 )
 from acc.adapters import registry
 from acc.chat import ChatService
@@ -580,4 +581,16 @@ def system_info():
         "memory_dir": str(config.MEMORY_DIR),
         "quality": prefs.get("quality", "balanced"),
         "claude_model": prefs.get("claude_model", "default"),
+        "plan": {
+            q: {
+                role: {
+                    "tier": power.tier,
+                    "effort": power.effort,
+                    "claude": tiers.model_name(tiers.CLAUDE[power.tier]),
+                    "codex": tiers.model_name(tiers.CODEX[power.tier]),
+                }
+                for role, power in roles.items()
+            }
+            for q, roles in tiers.PRESETS.items()
+        },
     }

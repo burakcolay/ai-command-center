@@ -14,6 +14,7 @@ import type {
   SystemInfo,
   Task,
   TaskEvent,
+  TeamPicture,
   WsMessage,
 } from "./lib/types";
 import { ChatView, activityText } from "./views/ChatView";
@@ -36,6 +37,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [activity, setActivity] = useState<Record<number, string>>({});
+  const [teams, setTeams] = useState<Record<number, TeamPicture>>({});
   const chatIdRef = useRef(chatId);
   chatIdRef.current = chatId;
 
@@ -90,6 +92,8 @@ export default function App() {
         ),
       );
       setActivity(({ [m.message_id]: _, ...rest }) => rest);
+    } else if (m.type === "team") {
+      setTeams((prev) => ({ ...prev, [m.message_id]: m.team }));
     } else if (m.type === "message_activity") {
       setActivity((prev) => ({ ...prev, [m.message_id]: activityText(m.tool) }));
     } else if (m.type === "task") {
@@ -191,6 +195,7 @@ export default function App() {
               projects={projects}
               projectId={projectId}
               activity={activity}
+              teams={teams}
               demoMode={system?.demo_mode ?? false}
               onProjectChange={setProjectId}
               onSend={send}

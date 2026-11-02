@@ -20,6 +20,7 @@ import json
 import shutil
 import time
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from typing import Any
 
 from acc import prefs, security
@@ -74,6 +75,8 @@ class ClaudeCodeAdapter(ModelAdapter):
         self._procs: dict[str, asyncio.subprocess.Process] = {}
         self._last_usage: Usage | None = None
         self._subagents: dict[str, str] = {}  # Agent tool_use id -> subagent name
+        self._seen_model: set[str] = set()  # subagents whose model was already reported
+        self._codex_calls: set[str] = set()  # tool_use ids of Codex bridge calls
         self._restricted = False  # set by health_check when the CLI supports --restricted
 
     async def _exec(self, *args: str, timeout: float = 20) -> tuple[int, str]:
@@ -199,6 +202,27 @@ class ClaudeCodeAdapter(ModelAdapter):
         if health.state != ModelState.AVAILABLE:
             raise AdapterError(health.detail)
 
+        # A model the subscription doesn't include fails at once (404): fall back to its default
+        # model, for the lead and for any subagent that asked for the same one.
+        worked = False
+        async for ev in self._run_once(req, run_id):
+            if ev.kind == "error" and ev.data.get("model_unavailable") and req.model and not worked:
+                break
+            worked = worked or ev.kind in ("tool", "delta", "agent")
+            yield ev
+        else:
+            return
+        yield AdapterEvent("log", {"text": f"{req.model} aboneliğinde yok; varsayılan modelle."})
+        agents = {
+            name: {**a, "model": "inherit"} if a.get("model") == req.model else a
+            for name, a in (req.agents or {}).items()
+        }
+        async for ev in self._run_once(
+            replace(req, model="default", agents=agents or None), run_id
+        ):
+            yield ev
+
+    async def _run_once(self, req: RunRequest, run_id: str) -> AsyncIterator[AdapterEvent]:
         proc = await asyncio.create_subprocess_exec(
             self.binary,
             *self._args(req),
@@ -257,7 +281,10 @@ class ClaudeCodeAdapter(ModelAdapter):
                     f"Claude Code API anahtarıyla başladı ({msg.get('apiKeySource')}). "
                     "Ücretli kullanımı önlemek için durduruldu."
                 )
-            return [AdapterEvent("log", {"text": f"Model: {msg.get('model')}"})]
+            return [
+                AdapterEvent("log", {"text": f"Model: {msg.get('model')}"}),
+                AdapterEvent("agent", {"op": "lead", "model": msg.get("model")}),
+            ]
         if t == "rate_limit_event":
             info = msg.get("rate_limit_info") or {}
             if info.get("isUsingOverage"):
@@ -285,7 +312,23 @@ class ClaudeCodeAdapter(ModelAdapter):
                     AdapterEvent("log", {"text": f"Kota uyarısı: %{round(used * 100)} kullanıldı."})
                 )
             return events
+        if t == "system" and msg.get("subtype") in ("task_progress", "task_notification"):
+            usage = msg.get("usage") or {}
+            data = {
+                "id": msg.get("tool_use_id"),
+                "tokens": usage.get("total_tokens"),
+                "tools": usage.get("tool_uses"),
+            }
+            if msg.get("subtype") == "task_progress":
+                return [
+                    AdapterEvent(
+                        "agent", {"op": "progress", "activity": msg.get("description"), **data}
+                    )
+                ]
+            return [AdapterEvent("agent", {"op": "end", "status": msg.get("status"), **data})]
         parent = msg.get("parent_tool_use_id")
+        if t == "user":
+            return self._tool_results(msg, parent)
         if t == "stream_event":
             if parent:  # a subagent's own words stay inside the subagent
                 return []
@@ -296,17 +339,29 @@ class ClaudeCodeAdapter(ModelAdapter):
             return []
         if t == "assistant":
             out = []
+            if parent and parent not in self._seen_model:  # which model the subagent really runs
+                self._seen_model.add(parent)
+                model = (msg.get("message") or {}).get("model")
+                out.append(AdapterEvent("agent", {"op": "model", "id": parent, "model": model}))
             for block in (msg.get("message") or {}).get("content") or []:
                 if block.get("type") == "text" and block.get("text") and not parent:
                     out.append(AdapterEvent("text", {"text": block["text"]}))
                 elif block.get("type") == "tool_use" and block.get("name") != "StructuredOutput":
                     data = {"name": block.get("name"), "input": block.get("input")}
+                    inp = block.get("input") or {}
                     if block.get("name") in ("Agent", "Task"):  # delegating to a subagent
-                        agent = (block.get("input") or {}).get("subagent_type") or "alt ajan"
+                        agent = inp.get("subagent_type") or "alt ajan"
                         self._subagents[block.get("id")] = agent
                         data["agent"] = agent
+                        start = {"op": "start", "id": block.get("id"), "agent": agent}
+                        out.append(AdapterEvent("agent", {**start, "task": inp.get("description")}))
                     elif parent:  # a step taken by a subagent, labelled with who took it
                         data["agent"] = self._subagents.get(parent, "alt ajan")
+                        data["parent"] = parent
+                    if str(block.get("name") or "").endswith("__codex_gorev"):  # Codex at work
+                        self._codex_calls.add(block.get("id"))
+                        codex = {"op": "codex", "id": block.get("id"), "parent": parent}
+                        out.append(AdapterEvent("agent", {**codex, "area": inp.get("alan")}))
                     out.append(AdapterEvent("tool", data))
             return out
         if t == "result":
@@ -314,7 +369,8 @@ class ClaudeCodeAdapter(ModelAdapter):
                 text = str(msg.get("result") or msg.get("subtype"))
                 if "limit" in text.lower() and (resets := self._blocked_until()):
                     raise QuotaExceeded(resets)
-                return [AdapterEvent("error", {"text": text})]
+                unavailable = msg.get("api_error_status") == 404 or "selected model" in text
+                return [AdapterEvent("error", {"text": text, "model_unavailable": unavailable})]
             return [
                 AdapterEvent(
                     "result",
@@ -323,10 +379,31 @@ class ClaudeCodeAdapter(ModelAdapter):
                         "structured": msg.get("structured_output"),
                         "turns": msg.get("num_turns"),
                         "duration_ms": msg.get("duration_ms"),
+                        "model_usage": msg.get("modelUsage"),
                     },
                 )
             ]
         return []
+
+    def _tool_results(self, msg: dict[str, Any], parent: str | None) -> list[AdapterEvent]:
+        """Codex finishing through the bridge, or a subagent that ran in the foreground."""
+        out = []
+        content = (msg.get("message") or {}).get("content")
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            tool_id = block.get("tool_use_id")
+            if tool_id in self._codex_calls:
+                ev = {"op": "codex_end", "id": tool_id, "error": bool(block.get("is_error"))}
+                out.append(AdapterEvent("agent", ev))
+            elif tool_id in self._subagents and not parent:
+                text = json.dumps(block.get("content"), ensure_ascii=False)
+                if "launched" not in text:  # background launch receipts aren't the end
+                    status = "failed" if block.get("is_error") else "completed"
+                    out.append(
+                        AdapterEvent("agent", {"op": "end", "id": tool_id, "status": status})
+                    )
+        return out
 
     async def cancel(self, run_id: str) -> None:
         proc = self._procs.get(run_id)

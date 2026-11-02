@@ -89,9 +89,16 @@ def test_subagents_reach_claude_code(quality):
     tools, system, agents = plan.tools, plan.system, plan.agents
     args = ClaudeCodeAdapter()._args(RunRequest(prompt="x", tools=tools, agents=agents))
     defined = json.loads(args[args.index("--agents") + 1])
-    assert set(defined) == {"arastirmaci", "tasarimci", "test-yazari", "inceleyici"}
+    assert set(defined) == {"kesifci", "arastirmaci", "tasarimci", "test-yazari", "inceleyici"}
     assert defined["inceleyici"]["tools"] == ["Read", "Glob", "Grep", "Bash"]
-    assert all(a["model"] == "inherit" and "label" not in a for a in defined.values())
+    assert all("label" not in a and "role" not in a for a in defined.values())
+    # Balanced plan: readers on the light model, builders on the middle one.
+    assert (defined["kesifci"]["model"], defined["kesifci"]["effort"]) == ("haiku", "low")
+    assert (defined["test-yazari"]["model"], defined["test-yazari"]["effort"]) == (
+        "sonnet",
+        "medium",
+    )
+    assert defined["inceleyici"]["model"] == "sonnet"
     assert "Agent" in args[args.index("--allowedTools") + 1]
     assert "- tasarimci: Tasarımcı" in system
     assert "--strict-mcp-config" in args  # the user's own MCP servers never load
@@ -113,8 +120,9 @@ def test_subagent_steps_are_labelled_and_their_words_stay_inside():
             ]
         },
     }
-    [ev] = a._translate(delegate)
-    assert ev.data["agent"] == "arastirmaci"
+    start, ev = a._translate(delegate)
+    assert start.kind == "agent" and start.data["op"] == "start" and start.data["id"] == "t1"
+    assert ev.kind == "tool" and ev.data["agent"] == "arastirmaci"
     inner = {
         "type": "assistant",
         "parent_tool_use_id": "t1",
@@ -125,12 +133,17 @@ def test_subagent_steps_are_labelled_and_their_words_stay_inside():
             ]
         },
     }
-    [ev] = a._translate(inner)
+    inner["message"]["model"] = "claude-haiku-5-5"
+    model, ev = a._translate(inner)
+    assert model.data == {"op": "model", "id": "t1", "model": "claude-haiku-5-5"}
     assert ev.kind == "tool" and ev.data == {
         "name": "WebSearch",
         "input": {"query": "q"},
         "agent": "arastirmaci",
+        "parent": "t1",
     }
+    [again] = a._translate(inner)  # the model is reported once per subagent
+    assert again.kind == "tool"
     sub_delta = {
         "type": "stream_event",
         "parent_tool_use_id": "t1",

@@ -27,6 +27,13 @@ with open(os.environ["FAKE_LOG"], "w") as f:
     json.dump({{"args": args, "prompt": prompt,
                "openai_key": "OPENAI_API_KEY" in os.environ}}, f)
 scenario = os.environ.get("FAKE_SCENARIO", "ok")
+with open(os.path.join(os.path.dirname(os.environ["FAKE_LOG"]), "calls.jsonl"), "a") as f:
+    f.write(json.dumps({{"args": args}}) + "\n")
+if scenario == "nomodel" and "-m" in args:
+    why = "The 'gpt-6-astra' model is not supported when using Codex with a ChatGPT account."
+    out_ = {{"type": "turn.failed", "error": {{"message": why}}}}
+    print(json.dumps(out_), flush=True)
+    sys.exit(1)
 def out(o): print(json.dumps(o), flush=True)
 out({{"type": "thread.started", "thread_id": "t-1"}})
 out({{"type": "turn.started"}})
@@ -91,7 +98,7 @@ async def test_a_review_runs_read_only_and_returns_structured_output(codex, tmp_
     args = sent["args"]
     assert args[args.index("-s") + 1] == "read-only"
     assert 'forced_login_method="chatgpt"' in args and 'approval_policy="never"' in args
-    assert 'model_reasoning_effort="high"' in args and "--output-schema" in args
+    assert 'model_reasoning_effort="xhigh"' in args and "--output-schema" in args
     assert args[-1] == "-" and sent["prompt"].startswith("TALİMATLAR:\nSen inceleyicisin.")
     assert sent["openai_key"] is False  # API keys never reach the CLI
     result = events[-1]
@@ -136,3 +143,13 @@ async def test_a_failed_turn_is_an_error(codex, monkeypatch, tmp_path):
     monkeypatch.setenv("FAKE_SCENARIO", "fail")
     events = await _events(codex, RunRequest(prompt="x", cwd=tmp_path, tools=["Read"]))
     assert events[-1].kind == "error" and events[-1].data["text"] == "model error"
+
+
+async def test_a_model_outside_the_plan_falls_back_to_the_default(codex, monkeypatch, tmp_path):
+    monkeypatch.setenv("FAKE_SCENARIO", "nomodel")
+    req = RunRequest(prompt="x", cwd=tmp_path, tools=["Read"], model="gpt-6-astra")
+    events = await _events(codex, req)
+    calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert "-m" in calls[0]["args"] and "-m" not in calls[1]["args"]
+    assert any("bu planda yok" in ev.data.get("text", "") for ev in events if ev.kind == "log")
+    assert events[-1].kind == "result"

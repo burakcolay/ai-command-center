@@ -37,6 +37,8 @@ if args[:2] == ["login", "status"]:
     print("Logged in using ChatGPT"); sys.exit(0)
 task = sys.stdin.read()
 cwd = args[args.index("-C") + 1]
+if os.environ.get("FAKE_CODEX_LOG"):
+    open(os.environ["FAKE_CODEX_LOG"], "a").write(json.dumps(args) + "\n")
 def out(o): print(json.dumps(o), flush=True)
 out({{"type": "thread.started", "thread_id": "t"}})
 if os.environ.get("FAKE_CODEX_QUOTA"):
@@ -132,7 +134,8 @@ def test_specialists_come_from_the_card_and_read_it_first(quality):
 
     quality("best")
     best = assistant.setup(assistant.PROJECT_TOOLS, CARD, codex=False, cwd=Path("/tmp/wt"))
-    assert best.agents["backend-gelistirici"]["model"] == "inherit"
+    assert best.agents["backend-gelistirici"]["model"] == "opus"  # güçlü · medium
+    assert best.agents["backend-gelistirici"]["effort"] == "medium"
     quality("economy")
     assert assistant.setup(assistant.PROJECT_TOOLS, CARD).agents is None
     quality("balanced")
@@ -343,3 +346,54 @@ def test_the_card_can_be_read_before_and_after_merge(client):
     finally:
         registry._adapters = original
         registry._health.clear()
+
+
+def test_each_codex_area_runs_at_its_own_model_and_effort(tmp_path, fake_codex):
+    log = tmp_path / "codex-args.jsonl"
+    areas = {"backend": {"model": "gpt-6.1-sol", "effort": "medium"}}
+    import os
+
+    env = {**os.environ, "FAKE_CODEX_LOG": str(log)}
+    p = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "acc.mcp_codex",
+            "--root",
+            str(tmp_path),
+            "--areas",
+            json.dumps(areas),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    try:
+        _ask(p, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        tools = _ask(p, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]
+        assert tools[0]["inputSchema"]["properties"]["alan"]["enum"] == ["backend"]
+        args = {"gorev": "x", "alan": "backend"}
+        call = {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {"name": "codex_gorev", "arguments": args},
+        }
+        assert _ask(p, call)["result"]["isError"] is False
+        sent = json.loads(log.read_text().splitlines()[0])
+        assert sent[sent.index("-m") + 1] == "gpt-6.1-sol"
+        assert 'model_reasoning_effort="medium"' in sent
+    finally:
+        p.stdin.close()
+        p.wait(timeout=10)
+
+
+def test_the_lead_sees_each_member_with_its_model_and_effort(quality):
+    plan = assistant.setup(assistant.PROJECT_TOOLS, CARD, codex=True, cwd=Path("/tmp/wt"))
+    assert (
+        "- backend-codex: Backend koordinatörü (Codex yazar) (Codex Orta · medium)" in plan.system
+    )
+    assert "- kesifci: Keşifçi (Hafif · low)" in plan.system
+    assert plan.labels["backend-gelistirici"] == "Backend geliştirici"
+    assert plan.codex_areas == {"backend": {"model": "gpt-6.1-sol", "effort": "medium"}}

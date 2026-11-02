@@ -112,7 +112,8 @@ class RunRequest:
     mcp_servers: dict[str, Any] | None = None  # MCP servers for this run only (e.g. Codex bridge)
 
 
-EventKind = Literal["text", "delta", "tool", "log", "usage", "result", "error"]
+# "agent": a team member started / changed model / made progress / finished (live orchestra).
+EventKind = Literal["text", "delta", "tool", "log", "usage", "result", "error", "agent"]
 
 
 @dataclass

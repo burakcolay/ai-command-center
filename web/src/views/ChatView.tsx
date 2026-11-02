@@ -4,10 +4,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ChangesCard } from "../components/ChangesCard";
 import { Composer } from "../components/Composer";
+import { Orchestra } from "../components/Orchestra";
 import { DotMatrix } from "../components/DotMatrix";
 import { attachmentUrl, type PendingAttachment } from "../lib/attachments";
 import { toolTarget } from "../lib/format";
-import type { DesignVariant, Message, Project, Task, TaskEvent } from "../lib/types";
+import type { DesignVariant, Message, Project, Task, TaskEvent, TeamPicture } from "../lib/types";
 
 const SUGGESTIONS = [
   "Aklımda bir uygulama fikri var, birlikte netleştirelim",
@@ -21,6 +22,7 @@ interface Props {
   tasks: Record<number, Task>;
   events: Record<number, TaskEvent[]>;
   activity: Record<number, string>;
+  teams: Record<number, TeamPicture>;
   projects: Project[];
   projectId: number | null;
   demoMode: boolean;
@@ -147,6 +149,7 @@ export function ChatView(p: Props) {
                   <AssistantMessage
                     message={m}
                     activity={p.activity[m.id]}
+                    team={p.teams[m.id] ?? m.meta?.team}
                     onApplyDesign={applyDesign}
                     onResume={() => p.onResume(m.id)}
                   />
@@ -209,11 +212,13 @@ function UserMessage({ message: m }: { message: Message }) {
 function AssistantMessage({
   message: m,
   activity,
+  team,
   onApplyDesign,
   onResume,
 }: {
   message: Message;
   activity?: string;
+  team?: TeamPicture;
   onApplyDesign: (v: DesignVariant) => void;
   onResume: () => void;
 }) {
@@ -226,8 +231,10 @@ function AssistantMessage({
         minute: "2-digit",
       })
     : null;
+  const withTeam = team && team.members.length > 0;
   return (
     <div className="animate-rise">
+      {withTeam && <Orchestra team={team} live={streaming} />}
       {m.content && (
         <div className={m.status === "error" ? "md text-danger" : "md"}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
@@ -267,7 +274,8 @@ function AssistantMessage({
           <span className="truncate">rapor kaydedildi · {path.split("/").slice(-2).join("/")}</span>
         </div>
       ))}
-      {m.adapter_id === "ollama" && !streaming && (
+      {team && !withTeam && !streaming && <Orchestra team={team} live={false} />}
+      {m.adapter_id === "ollama" && !streaming && !team && (
         <div className="mt-1.5 font-mono text-[10px] tracking-wide text-faint">yerel model</div>
       )}
     </div>

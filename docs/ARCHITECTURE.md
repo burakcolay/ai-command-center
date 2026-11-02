@@ -199,6 +199,32 @@ Kullanıcı model seçmez; iş bölümü koddadır.
   - Spec'ten yazılan kartta 9 bölüm vardı ve Codex hazırken Backend'i Codex'e verdi.
 - **Görüntüleme:** `GET /projects/{id}/card` kartın en yeni halini döndürür: henüz birleştirilmemişse sohbetin kopyasındakini (`pending`), değilse projedekini (`merged`).
 
+### Model planı ve canlı orkestra (`tiers.py`, `orchestra.py`)
+
+- **Seviyeler:** güçlü / orta / hafif × efor (low…max). Claude: opus / sonnet / haiku (takma adlar). Codex: gpt-6-astra / gpt-6.1-sol / gpt-6-luna (`codex debug models` açıklamalarına göre: "frontier", "workhorse for coding", "fast and affordable").
+- **Roller:** lead, builder, designer, reader, reviewer. Kaliteye göre ön ayar (`tiers.PRESETS`):
+  - Ekonomik: lider orta·medium.
+  - Dengeli: lider güçlü·high, kod yazan orta·medium, okuyucu hafif·low.
+  - En iyi: lider güçlü·xhigh, kod yazan güçlü·medium.
+- **Alan seviyesi:** Kartın "Güç" sütunu her alanın seviyesini belirler; `BUILDER_CAP` ile sınırlanır (lider düşürebilir, yükseltemez).
+- **Diğer kurallar:**
+  - Kullanıcının "Lider modeli" sabitlemesi plandan önce gelir.
+  - Özetler hafif·low çalışır.
+- **Doğrulandı:**
+  - Alt ajan tanımında `model` ve `effort` uygulanıyor; geçersiz bir efor değeri CLI tarafından reddediliyor.
+  - "haiku" denen alt ajan `claude-haiku-5-5` ile çalıştı.
+  - Gerçek bir turda lider Opus 5.5 · high, frontend uzmanı Sonnet 5.5 · medium, Codex koordinatörü Sonnet 5.5 · low ile çalıştı.
+- **Model yoksa:**
+  - Claude 404 / "issue with the selected model" döner. Adaptör `--model` olmadan, aynı modeli isteyen alt ajanları `inherit` yaparak bir kez yeniden dener.
+  - Codex "model … not supported" verirse `-m` olmadan yeniden dener.
+- **Canlı orkestra:** Claude akışındaki olaylar kullanılır:
+  - `system/task_started|task_progress|task_notification`: alt ajan başladı, ilerliyor (`usage.total_tokens`), bitti.
+  - Alt ajan mesajlarındaki `message.model`: gerçek model.
+  - Codex köprüsü çağrısı ve dönüşü.
+  - `result.modelUsage`: modele göre token.
+
+  `Orchestra` bunları `{lead, members, usage}` olarak WebSocket'e (`type: "team"`) yayınlar ve turun sonunda `messages.meta.team`'e yazar. İnceleyici de bir üye olarak görünür.
+
 ### Görseller ve tasarımlar
 
 - **Yüklemeler** (`attachments.py`):
@@ -278,6 +304,8 @@ waiting_approval ──reject──► cancelled (worktree + branch silinir)
 - [x] **Proje Kartı + alan uzmanları:** spec/.md'den kart, karttan uzmanlar, kart her ajanın talimatında
 - [x] **Claude ve Codex aynı anda:** Orbit'in MCP köprüsüyle Codex bir alanı paralel yazar
 - [x] **Kısıtlı mod** (`--restricted`) ve tur başına yalnızca Orbit'in MCP sunucuları
+- [x] **Rol başına model ve efor planı** (Claude ve Codex karşılıkları, kartta alan başına seviye, abonelikte olmayan modelde geri düşme)
+- [x] **Canlı orkestra paneli** (kim, hangi gerçek model, efor, ne yapıyor, token)
 - [ ] **Sıradaki adaylar:** iOS simülatör ekran görüntüsü (Mac'te doğrulanmalı); web projeleri için canlı önizleme
 - [ ] Grok Build adaptörü (ücretsiz erişim doğrulanırsa)
 - [ ] Faz 4–8: dokümandaki sırayla

@@ -52,6 +52,11 @@ export interface SystemInfo {
   memory_dir: string;
   quality: "economy" | "balanced" | "best";
   claude_model: "default" | "sonnet" | "opus" | "fable";
+  /** quality -> role -> tier, effort and the Claude / Codex model it maps to. */
+  plan: Record<
+    string,
+    Record<string, { tier: string; effort: string; claude: string; codex: string }>
+  >;
 }
 
 export interface Project {
@@ -89,6 +94,8 @@ export interface Message {
     task_id?: number;
     /** Waiting for the quota reset (unix seconds). */
     resume_at?: number;
+    /** The team that worked on this turn (lead, subagents, Codex, reviewer). */
+    team?: TeamPicture;
     /** Independent review of this turn's change by another model (or a separate session). */
     review?: {
       by: string;
@@ -169,6 +176,39 @@ export interface ProjectCard {
   team: { name: string; tech: string; folder: string; builder: "claude" | "codex" }[];
 }
 
+export type TeamStatus = "running" | "done" | "failed";
+
+export interface TeamMember {
+  id: string;
+  agent: string;
+  label: string;
+  vendor: string;
+  model: string;
+  actual: string;
+  effort: string;
+  status: TeamStatus;
+  task: string;
+  activity: string;
+  tokens: number;
+  tools: number;
+  parent?: string;
+}
+
+/** Who worked on a turn, on which model and effort, and the tokens it took. */
+export interface TeamPicture {
+  lead: {
+    label: string;
+    vendor: string;
+    model: string;
+    actual: string;
+    effort: string;
+    status: TeamStatus;
+    activity: string;
+  };
+  members: TeamMember[];
+  usage: Record<string, { input: number; output: number; cached: number }>;
+}
+
 export interface GitHubStatus {
   repo: string | null;
   ready: boolean;
@@ -246,6 +286,7 @@ export type WsMessage =
       message_id: number;
       tool: { name: string; input?: unknown; agent?: string };
     }
+  | { type: "team"; message_id: number; team: TeamPicture }
   | { type: "task"; task: Task }
   | { type: "event"; event: TaskEvent }
   | { type: "approvals_changed" };

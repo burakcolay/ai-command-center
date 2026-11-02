@@ -59,10 +59,10 @@ const QUALITY = [
 ] as const;
 
 const MODELS = [
-  { id: "default", label: "Varsayılan", note: "Aboneliğinin seçtiği model" },
+  { id: "default", label: "Plana göre", note: "Kalite planındaki model (önerilen)" },
   { id: "sonnet", label: "Sonnet", note: "Hızlı, kotayı idareli kullanır" },
   { id: "opus", label: "Opus", note: "Daha güçlü; kotayı daha hızlı kullanır" },
-  { id: "fable", label: "Fable", note: "En yeni model; aboneliğinde yoksa hata verir" },
+  { id: "fable", label: "Fable", note: "En yeni model; aboneliğinde yoksa varsayılana geçer" },
 ] as const;
 
 export function SettingsView({
@@ -95,14 +95,16 @@ export function SettingsView({
           value={system?.quality}
           onChange={(v) => onPreference("quality", v)}
         />
+        {system?.plan && <PlanTable plan={system.plan[system.quality] ?? {}} />}
         <Choice
-          title="Model"
+          title="Lider modeli"
           options={MODELS}
           value={system?.claude_model}
           onChange={(v) => onPreference("claude_model", v)}
         />
         <p className="text-[12px] leading-relaxed text-faint">
-          Seçilen model aboneliğinde yoksa çalıştırma açık bir hata verir; ücretli kullanıma geçilmez.
+          Model aboneliğinde yoksa Orbit kendiliğinden aboneliğin varsayılan modeline geçer; ücretli
+          kullanıma hiçbir zaman geçilmez.
         </p>
       </div>
 
@@ -156,6 +158,69 @@ export function SettingsView({
         ))}
       </div>
     </Page>
+  );
+}
+
+const ROLES: { id: string; label: string; who: string }[] = [
+  { id: "lead", label: "Lider", who: "planlar, işi böler, sonucu kontrol eder" },
+  { id: "builder", label: "Kod yazan uzmanlar", who: "alan geliştiricileri, test yazarı" },
+  { id: "designer", label: "Tasarımcı", who: "ekran tasarımları" },
+  { id: "reader", label: "Okuma ve araştırma", who: "keşifçi, araştırmacı" },
+  { id: "reviewer", label: "Bağımsız inceleme", who: "değişikliği yazmayan model" },
+];
+
+/** Which model and effort each role gets on the chosen quality — for Claude and for Codex. */
+function PlanTable({
+  plan,
+}: {
+  plan: Record<string, { tier: string; effort: string; claude: string; codex: string }>;
+}) {
+  return (
+    <div>
+      <div className="mb-1.5 text-[13px] text-fg">Model planı</div>
+      <div className="overflow-x-auto rounded-lg border border-line">
+        <table className="w-full min-w-[520px] text-left text-[12.5px]">
+          <thead className="font-mono text-[10px] uppercase tracking-[0.12em] text-faint">
+            <tr className="border-b border-line">
+              <th className="px-3 py-2 font-normal">Rol</th>
+              <th className="px-3 py-2 font-normal">Claude</th>
+              <th className="px-3 py-2 font-normal">Codex karşılığı</th>
+              <th className="px-3 py-2 font-normal">Efor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ROLES.map((r) => {
+              const p = plan[r.id];
+              if (!p) return null;
+              return (
+                <tr key={r.id} className="border-b border-line last:border-b-0">
+                  <td className="px-3 py-2">
+                    <div className="text-fg">{r.label}</div>
+                    <div className="text-[11px] text-faint">{r.who}</div>
+                  </td>
+                  <td className="px-3 py-2 text-fg">{p.claude}</td>
+                  <td className="px-3 py-2 text-dim">{p.codex}</td>
+                  <td className="px-3 py-2 font-mono text-[11.5px] text-dim">{p.effort}</td>
+                </tr>
+              );
+            })}
+            <tr>
+              <td className="px-3 py-2">
+                <div className="text-fg">Özetler</div>
+                <div className="text-[11px] text-faint">uzun sohbetleri katlar</div>
+              </td>
+              <td className="px-3 py-2 text-dim" colSpan={3}>
+                Yerel model (Ollama) → Gemini Flash → Haiku · low
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-1.5 text-[11.5px] leading-relaxed text-faint">
+        Lider, Proje Kartı'nda her alan için bundan daha düşük bir seviye seçebilir (daha az
+        token), daha yükseğini seçemez.
+      </p>
+    </div>
   );
 }
 

@@ -20,6 +20,7 @@ import shutil
 import tempfile
 import time
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -39,8 +40,23 @@ from acc.adapters.base import (
 from acc.cost_guard import sanitized_env
 
 WRITE_TOOLS = {"Write", "Edit", "Bash"}
-# Codex's reasoning levels; Orbit's "xhigh"/"max" map to its highest common one.
-EFFORT = {"low": "low", "medium": "medium", "high": "high", "xhigh": "high", "max": "high"}
+# Reasoning levels every listed model takes (codex debug models, 0.166).
+EFFORTS = {"low", "medium", "high", "xhigh", "max"}
+_NO_MODEL = (
+    "not supported",
+    "not available",
+    "does not exist",
+    "not found",
+    "no access",
+    "unsupported",
+)
+
+
+def _model_unavailable(message: str) -> bool:
+    text = message.lower()
+    return "model" in text and any(w in text for w in _NO_MODEL)
+
+
 FALLBACK_COOLDOWN_S = 30 * 60
 _RETRY_IN = re.compile(r"try again in\s+(?:(\d+)\s*hours?)?\s*(?:(\d+)\s*min)?", re.I)
 
@@ -156,8 +172,11 @@ class CodexAdapter(ModelAdapter):
             args += ["--add-dir", str(req.output_dir)]
         if "WebSearch" in tools:
             args += ["-c", 'web_search="live"']
+        if req.model:
+            args += ["-m", req.model]
         if req.effort:
-            args += ["-c", f'model_reasoning_effort="{EFFORT.get(req.effort, "medium")}"']
+            effort = req.effort if req.effort in EFFORTS else "medium"
+            args += ["-c", f'model_reasoning_effort="{effort}"']
         if schema_file:
             args += ["--output-schema", str(schema_file)]
         return [*args, "-"]  # the prompt comes on stdin
@@ -176,6 +195,21 @@ class CodexAdapter(ModelAdapter):
         if health.state != ModelState.AVAILABLE:
             raise AdapterError(health.detail)
 
+        # A model the ChatGPT plan doesn't include fails at once: retry on the plan's default.
+        worked = False
+        async for ev in self._run_once(req, run_id):
+            unavailable = ev.kind == "error" and _model_unavailable(str(ev.data.get("text")))
+            if unavailable and req.model and not worked:
+                break
+            worked = worked or ev.kind in ("tool", "delta")
+            yield ev
+        else:
+            return
+        yield AdapterEvent("log", {"text": f"{req.model} bu planda yok; varsayılan modelle devam."})
+        async for ev in self._run_once(replace(req, model=None), run_id):
+            yield ev
+
+    async def _run_once(self, req: RunRequest, run_id: str) -> AsyncIterator[AdapterEvent]:
         with tempfile.TemporaryDirectory(prefix="orbit-codex-") as tmp:
             schema_file = None
             if req.json_schema:

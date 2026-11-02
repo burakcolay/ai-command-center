@@ -37,7 +37,7 @@ def test_without_project_the_assistant_gets_web_and_a_scratch_folder(client, rec
     turn(client, chat_id, "Selam")
     req = rec.requests[-1]
     assert req.tools == [*assistant.SCRATCH_TOOLS, "Agent"] and "Bash" not in req.tools
-    assert set(req.agents) == {"arastirmaci", "tasarimci"}
+    assert set(req.agents) == {"kesifci", "arastirmaci", "tasarimci"}
     assert req.settings is None  # no shell, so no sandbox needed
     assert req.cwd.name == str(chat_id) and req.cwd.is_dir()
     assert req.output_dir is not None and req.output_dir.is_dir()

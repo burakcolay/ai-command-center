@@ -27,6 +27,7 @@ class Area:
     tech: str  # e.g. "FastAPI (Python 3.12)"
     folder: str  # e.g. "server/"
     builder: str  # "claude" or "codex"
+    power: str = ""  # e.g. "Orta · medium": the lead's pick of model tier and effort
 
     @property
     def slug(self) -> str:
@@ -49,7 +50,7 @@ def _cells(line: str) -> list[str]:
 
 
 def team(text: str | None) -> list[Area]:
-    """Rows of the "## Ekip" table: | Alan | Teknoloji | Klasör | Yapan |"""
+    """Rows of the "## Ekip" table: | Alan | Teknoloji | Klasör | Yapan | Güç |"""
     if not text:
         return []
     lines = text.splitlines()
@@ -73,7 +74,8 @@ def team(text: str | None) -> list[Area]:
         return next((i for i, h in enumerate(header) if any(n in h for n in names)), None)
 
     i_area, i_tech = col("alan"), col("teknoloji", "dil")
-    i_folder, i_builder = col("klasor"), col("yapan", "model")
+    i_folder, i_builder = col("klasor"), col("yapan")
+    i_power = col("guc", "seviye", "model")
     if i_area is None:
         return []
     areas, seen = [], set()
@@ -85,7 +87,7 @@ def team(text: str | None) -> list[Area]:
             return row[i] if i is not None and i < len(row) else ""
 
         builder = "codex" if "codex" in get(i_builder).lower() else "claude"
-        area = Area(get(i_area), get(i_tech), get(i_folder), builder)
+        area = Area(get(i_area), get(i_tech), get(i_folder), builder, get(i_power))
         if area.name and area.slug not in seen:
             seen.add(area.slug)
             areas.append(area)

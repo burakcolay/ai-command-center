@@ -91,6 +91,9 @@ class MockAdapter(ModelAdapter):
             return
 
         message = _message(req.prompt).lower()
+        if "ekip" in message and req.agents:  # demo of the live orchestra
+            async for ev in self._team(req, run_id):
+                yield ev
         edit = any(w in message for w in EDIT_WORDS)
         parts = ["Demo yanıtı: mesajını aldım."]
         if "tasarım" in message and not edit and req.output_dir:
@@ -121,6 +124,25 @@ class MockAdapter(ModelAdapter):
         async for ev in self._say(text, run_id, req.stream_text):
             yield ev
         yield AdapterEvent("result", {"text": text})
+
+    async def _team(self, req: RunRequest, run_id: str) -> AsyncIterator[AdapterEvent]:
+        models = {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5"}
+        models["haiku"] = "claude-haiku-5-5"
+        yield AdapterEvent("agent", {"op": "lead", "model": "claude-opus-5-5"})
+        names = list(req.agents or {})[:3]
+        for n, name in enumerate(names):
+            yield AdapterEvent("agent", {"op": "start", "id": f"a{n}", "agent": name, "task": name})
+            model = models.get((req.agents or {})[name].get("model", ""), "claude-sonnet-5-5")
+            yield AdapterEvent("agent", {"op": "model", "id": f"a{n}", "model": model})
+        for step in range(1, 4):
+            await asyncio.sleep(self.delay)
+            if run_id in self._cancelled:
+                raise AdapterError("Çalıştırma iptal edildi.")
+            for n, _ in enumerate(names):
+                progress = {"op": "progress", "id": f"a{n}", "tokens": 4000 * step * (n + 1)}
+                yield AdapterEvent("agent", {**progress, "tools": step, "activity": f"adım {step}"})
+        for n, _ in enumerate(names):
+            yield AdapterEvent("agent", {"op": "end", "id": f"a{n}", "status": "completed"})
 
     async def cancel(self, run_id: str) -> None:
         self._cancelled.add(run_id)

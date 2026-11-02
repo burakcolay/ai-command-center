@@ -33,6 +33,7 @@ from acc import (
     security,
     serialize,
     sessions,
+    tiers,
 )
 from acc.adapters import Registry
 from acc.adapters.base import AdapterError, ModelState, QuotaExceeded, RunRequest, SessionLost
@@ -42,6 +43,7 @@ from acc.gitops import GitError
 from acc.gitops import discard as discard_uncommitted
 from acc.mcp_codex import FULL_NAME as CODEX_TOOL
 from acc.models import Chat, Message, Project, Task
+from acc.orchestra import Orchestra
 from acc.routing import Router
 
 TRANSCRIPT_LIMIT = 150_000  # chars of history sent when a conversation must be rebuilt
@@ -128,6 +130,7 @@ class ChatService:
         self._runs: dict[int, tuple[str, str]] = {}  # message_id -> (adapter_id, run_id)
         self._cancelling: set[int] = set()
         self._codex_wrote: set[int] = set()  # turns in which Codex built something via the bridge
+        self._orchestras: dict[int, Orchestra] = {}  # live team picture per running turn
         self._jobs: set[asyncio.Task[None]] = set()
 
     def _spawn(self, coro) -> None:
@@ -191,7 +194,15 @@ class ChatService:
         adapter = (await self.router.pick("summarize")).adapter  # free local model first
         if adapter is None:
             return
-        req = RunRequest(prompt=prompt, system_prompt=SUMMARY_SYSTEM, tools=[])
+        # Summarising is light work: the light tier, low effort (Haiku if it falls to Claude).
+        light = tiers.Power("hafif", "low")
+        req = RunRequest(
+            prompt=prompt,
+            system_prompt=SUMMARY_SYSTEM,
+            tools=[],
+            model=light.model_for(adapter.info.id),
+            effort=light.effort,
+        )
         try:
             async for ev in adapter.run(req, uuid.uuid4().hex):
                 if ev.kind == "result" and (text := (ev.data.get("text") or "").strip()):
@@ -270,7 +281,20 @@ class ChatService:
             plan = assistant.setup(tools, card_text, codex, cwd)
             lead_tools, lead_system, team, mcp = plan.tools, plan.system, plan.agents, plan.mcp
         else:
+            plan = None
             lead_tools, lead_system, team, mcp = tools, assistant.SYSTEM, None, None
+
+        # The conductor's model and effort come from the plan for the chosen quality.
+        lead_power = assistant.plan()["lead"]
+        if adapter.info.id in TEAM_ADAPTERS:  # Claude (or the demo standing in for it)
+            lead_model = assistant.lead_model()
+        else:
+            lead_model = lead_power.model_for(adapter.info.id)
+        orchestra = Orchestra(message_id)
+        self._orchestras[message_id] = orchestra
+        orchestra.set_lead(adapter.info.id, lead_model, lead_power.effort)
+        if plan:
+            orchestra.set_roster(plan.agents, plan.labels or {}, plan.codex_areas or {})
 
         def build(with_history: bool) -> str:
             parts = [BACKUP_NOTE.format(name=adapter.info.name) if local else note]
@@ -312,7 +336,8 @@ class ChatService:
                 permission_mode="dontAsk",
                 settings=assistant.settings(tools),
                 stream_text=True,
-                effort=assistant.effort(),
+                model=lead_model,
+                effort=lead_power.effort,
                 read_dirs=[] if local else attachments.read_dirs(),
                 output_dir=None if local else out_dir,
                 session_id=new_session,
@@ -351,6 +376,7 @@ class ChatService:
                     )
                     if reviewed:
                         meta["review"] = reviewed
+            meta["team"] = orchestra.finish()
             self._finish(message_id, text, "done", adapter.info.id, meta)
             if time.monotonic() - started > NOTIFY_AFTER_S:
                 notify.send("Orbit yanıt verdi", question.strip().splitlines()[0][:120])
@@ -361,10 +387,12 @@ class ChatService:
             partial = "".join(buf).strip()
             if message_id in self._cancelling:
                 stopped = (partial + "\n\n" if partial else "") + "_(durduruldu)_"
-                self._finish(message_id, stopped, "cancelled", adapter.info.id)
+                team = {"team": orchestra.finish()}
+                self._finish(message_id, stopped, "cancelled", adapter.info.id, team)
             else:
                 failed = (partial + "\n\n" if partial else "") + f"⚠ {e}"
-                self._finish(message_id, failed, "error", adapter.info.id)
+                team = {"team": orchestra.finish()}
+                self._finish(message_id, failed, "error", adapter.info.id, team)
             await self._close_turn(ws)
         except Exception as e:
             self._finish(message_id, f"⚠ Beklenmeyen hata: {e!r}", "error")
@@ -373,6 +401,7 @@ class ChatService:
             self._runs.pop(message_id, None)
             self._cancelling.discard(message_id)
             self._codex_wrote.discard(message_id)
+            self._orchestras.pop(message_id, None)
 
     async def _run(self, message_id: int, adapter, req: RunRequest, buf: list[str]) -> str:
         run_id = uuid.uuid4().hex
@@ -383,12 +412,19 @@ class ChatService:
                 broker.publish(
                     {"type": "message_delta", "message_id": message_id, "text": ev.data["text"]}
                 )
+            elif ev.kind == "agent":
+                if orchestra := self._orchestras.get(message_id):
+                    orchestra.apply(ev.data)
             elif ev.kind == "tool":
+                if orchestra := self._orchestras.get(message_id):
+                    orchestra.tool(ev.data)
                 if ev.data.get("name") == CODEX_TOOL:
                     self._codex_wrote.add(message_id)
                 tool = security.redact_data(ev.data)
                 broker.publish({"type": "message_activity", "message_id": message_id, "tool": tool})
             elif ev.kind == "result":
+                if orchestra := self._orchestras.get(message_id):
+                    orchestra.add_usage(ev.data.get("model_usage"))
                 return ev.data.get("text") or "".join(buf)
             elif ev.kind == "error":
                 raise AdapterError(ev.data.get("text") or "Bilinmeyen hata")
@@ -443,6 +479,7 @@ class ChatService:
             results = s.get(Task, ws.task_id).checks or []
         self._activity(message_id, name, "değişiklikleri inceliyor")
         sessions.log(ws.task_id, f"Bağımsız inceleme: {name}")
+        power = assistant.plan()["reviewer"]
         req = RunRequest(
             prompt=review.prompt(question, diff, results, card.read(ws.cwd)),
             cwd=ws.cwd,
@@ -451,11 +488,18 @@ class ChatService:
             tools=review.READ_ONLY,
             permission_mode="dontAsk",
             settings=assistant.settings(review.READ_ONLY),
-            effort=assistant.effort(),
+            model=power.model_for(reviewer.info.id),
+            effort=power.effort,
         )
+        orchestra = self._orchestras.get(message_id)
+        if orchestra:
+            label = f"{name} · inceleme"
+            orchestra.reviewer(label, reviewer.info.id, req.model, power.effort)
         try:
             data = await self._result(message_id, reviewer, req, name)
         except AdapterError as e:  # incl. quota: the change stays, just unreviewed
+            if orchestra:
+                orchestra.reviewer_done(None)
             if message_id in self._cancelling:
                 return text + "\n\n_(inceleme durduruldu)_", None
             sessions.log(ws.task_id, f"İnceleme yapılamadı: {e}")
@@ -463,6 +507,8 @@ class ChatService:
         finally:
             await discard_uncommitted(ws.wt)  # a reviewer never leaves changes behind
         r = review.parse(name, data.get("structured"))
+        if orchestra:
+            orchestra.reviewer_done(len(r.issues) if r else None)
         if r is None:
             sessions.log(ws.task_id, f"{name} incelemesi okunamadı.")
             return text, None

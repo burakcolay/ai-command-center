@@ -89,10 +89,27 @@ Her aşamanın sonunda tek bir değişiklik kartı görürsün; "devam" deyince 
 - **Gemini (ikinci göz):** Google hesabınla (AI Plus/Pro) çalışır. Codex yoksa Claude'un değişikliklerini o inceler; uzun sohbet özetlerini de o çıkarır, böylece Claude'un kotası harcanmaz. Kod yazmaz.
 - **Ollama (yerel):** Varsa uzun sohbetleri ücretsiz özetler.
 
+**Kim hangi modelle çalışır:** Her rolün bir model seviyesi (güçlü / orta / hafif) ve bir eforu vardır. Orbit seviyeyi Claude'da Opus / Sonnet / Haiku'ya, Codex'te GPT-6 Astra / GPT-6.1 Sol / GPT-6 Luna'ya çevirir. Dengeli kalitede:
+- **Lider:** Opus · high. Planlar, işi böler, kontrol eder.
+- **Kod yazan uzmanlar:** Sonnet · medium.
+- **Keşifçi ve araştırmacı:** Haiku · low. Okur, bulur, özetler.
+- **İnceleyici:** Sonnet · medium.
+- **Özetler:** Önce yerel model, sonra Gemini Flash, en son Haiku.
+
+Lider, kartta her alan için bundan daha düşük bir seviye seçebilir ama daha yükseğini seçemez. Örneğin basit bir arayüz için "Orta · low", güvenlik ya da eşzamanlılık içeren bir backend için "Güçlü · medium". Pahalı lider çok dosya okumak yerine bu işi ucuz Keşifçi'ye verir. Planın tamamı **Ayarlar → Model planı**'nda görünür. Bir model aboneliğinde yoksa Orbit kendiliğinden varsayılan modele geçer.
+
+**Canlı orkestra:** Ekip çalışırken cevabın üstünde bir **Orkestra** paneli açılır. Panelde şunlar görünür:
+- lider ve her ajan, hangi şirketin modeli olduğu,
+- gerçekte çalışan model (ör. "Haiku 5.5") ve eforu (nokta göstergesi),
+- o an ne yaptığı ve harcadığı token,
+- Codex'in hangi alanda çalıştığı ve inceleyicinin bulduğu sorun sayısı.
+
+Tur bitince panel mesajda özet olarak kalır ve modele göre toplam girdi ve çıktı token'ını gösterir.
+
 Ekibin ne kadar çalışacağını **Ayarlar → Kalite** belirler:
-- **Ekonomik:** Tek asistan; alt ajan ve inceleme yok.
-- **Dengeli:** Büyük işlerde alt ajanlar. Her değişikliği başka bir model inceler; başka model yoksa yalnızca büyük değişiklikler incelenir.
-- **En iyi:** Her değişiklik incelenir. Başka model yoksa Claude ayrı bir oturumda inceler.
+- **Ekonomik:** Tek asistan, Sonnet · medium; alt ajan ve inceleme yok.
+- **Dengeli:** Yukarıdaki plan. Her değişikliği başka bir model inceler; başka model yoksa yalnızca büyük değişiklikler incelenir.
+- **En iyi:** Lider Opus · xhigh, kod yazanlar Opus · medium, okuyucular Sonnet · low; her değişiklik incelenir. Kota en hızlı bu ayarda biter.
 
 **Hafıza:** Asistan aynı sohbetteki konuşmayı hatırlar. Çok uzun sohbetlerin eski kısımları özetlenir; özetleme varsa ücretsiz yerel modelle yapılır.
 
@@ -195,6 +212,8 @@ server/acc/       FastAPI backend
   review.py       Bağımsız inceleme ve düzeltme turu
   card.py         Proje Kartı (PROJE.md) ve ekip tablosu
   mcp_codex.py    Claude'dan Codex'e iş veren köprü (MCP)
+  tiers.py        Rol başına model seviyesi ve efor (Claude ve Codex karşılıkları)
+  orchestra.py    Canlı orkestra: kim, hangi modelle, ne yapıyor, kaç token
   chat.py         Sohbet turu: model seçimi, oturum, çıktılar
   sessions.py     Sohbetteki değişiklikler: kopya, commit, kontroller, birleştirme
   github.py       Değişiklikleri GitHub'a PR olarak gönderme

@@ -31,6 +31,18 @@ TOOL_NAME = "codex_gorev"
 FULL_NAME = f"mcp__{SERVER}__{TOOL_NAME}"
 UNAVAILABLE = "CODEX_KULLANILAMADI"
 
+
+def tool(areas: dict[str, dict[str, str]]) -> dict[str, Any]:
+    """The tool as Claude sees it. `alan` picks one of the areas Orbit configured; the model
+    and effort for that area are Orbit's, the caller can't name any other."""
+    spec = dict(TOOL)
+    props = dict(spec["inputSchema"]["properties"])
+    if areas:
+        props["alan"] = {"type": "string", "enum": sorted(areas), "description": "Hangi alan"}
+    spec["inputSchema"] = {**spec["inputSchema"], "properties": props}
+    return spec
+
+
 TOOL = {
     "name": TOOL_NAME,
     "description": (
@@ -57,15 +69,16 @@ SYSTEM = """Sen bir ekipte çalışan kıdemli bir yazılım geliştiricisin. T�
 
 
 async def run_task(
-    root: Path, task: str, effort: str | None, codex: CodexAdapter
+    root: Path, task: str, power: dict[str, str], codex: CodexAdapter
 ) -> tuple[str, bool]:
-    """Returns (text for Claude, is_error)."""
+    """Returns (text for Claude, is_error). `power` is the area's model and effort."""
     req = RunRequest(
         prompt=task,
         cwd=root,
         system_prompt=SYSTEM,
         tools=["Read", "Edit", "Write", "Bash"],
-        effort=effort,
+        model=power.get("model"),
+        effort=power.get("effort"),
     )
     files: list[str] = []
     commands: list[str] = []
@@ -93,7 +106,7 @@ async def run_task(
     return f"{UNAVAILABLE}: Codex sonuç vermeden durdu.", True
 
 
-async def serve(root: Path, effort: str | None, codex: CodexAdapter) -> None:
+async def serve(root: Path, areas: dict[str, dict[str, str]], codex: CodexAdapter) -> None:
     loop = asyncio.get_running_loop()
     reader = asyncio.StreamReader(limit=16 * 1024 * 1024)
     await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
@@ -111,7 +124,9 @@ async def serve(root: Path, effort: str | None, codex: CodexAdapter) -> None:
         if params.get("name") != TOOL_NAME or not task:
             text, err = "Bilinmeyen araç ya da boş görev.", True
         else:
-            text, err = await run_task(root, task, effort, codex)
+            area = str(args.get("alan") or "")
+            power = areas.get(area) or (next(iter(areas.values())) if areas else {})
+            text, err = await run_task(root, task, power, codex)
         result = {"content": [{"type": "text", "text": text}], "isError": err}
         await send({"jsonrpc": "2.0", "id": msg_id, "result": result})
 
@@ -135,7 +150,7 @@ async def serve(root: Path, effort: str | None, codex: CodexAdapter) -> None:
                 }
             )
         elif method == "tools/list":
-            await send({"jsonrpc": "2.0", "id": msg_id, "result": {"tools": [TOOL]}})
+            await send({"jsonrpc": "2.0", "id": msg_id, "result": {"tools": [tool(areas)]}})
         elif method == "tools/call":
             job = asyncio.create_task(call(msg_id, msg.get("params") or {}))  # several at once
             jobs.add(job)
@@ -154,23 +169,21 @@ async def serve(root: Path, effort: str | None, codex: CodexAdapter) -> None:
         await asyncio.gather(*jobs, return_exceptions=True)
 
 
-def config(root: Path, effort: str | None) -> dict[str, Any]:
+def config(root: Path, areas: dict[str, dict[str, str]]) -> dict[str, Any]:
     """The --mcp-config entry Orbit gives Claude Code for one turn."""
-    args = ["-m", "acc.mcp_codex", "--root", str(root)]
-    if effort:
-        args += ["--effort", effort]
+    args = ["-m", "acc.mcp_codex", "--root", str(root), "--areas", json.dumps(areas)]
     return {"mcpServers": {SERVER: {"type": "stdio", "command": sys.executable, "args": args}}}
 
 
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--root", required=True)
-    p.add_argument("--effort")
+    p.add_argument("--areas", default="{}")
     a = p.parse_args()
     root = Path(a.root).resolve()
     if not root.is_dir():
         sys.exit(f"klasör yok: {root}")
-    asyncio.run(serve(root, a.effort, CodexAdapter()))
+    asyncio.run(serve(root, json.loads(a.areas), CodexAdapter()))
 
 
 if __name__ == "__main__":
