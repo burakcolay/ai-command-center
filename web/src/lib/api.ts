@@ -4,6 +4,7 @@ import type {
   Decision,
   Message,
   ChecksConfig,
+  CatalogProvider,
   ChecksInfo,
   GitHubStatus,
   ProjectCard,
@@ -76,13 +77,16 @@ export const api = {
     project_id: number | null,
     attachments: string[],
     model_choice: ModelChoice,
+    effort_choice: string | null,
   ) =>
     post<{ chat: Chat; messages: Message[] }>(`/chats/${chatId}/messages`, {
       content,
       project_id,
       attachments,
       model_choice,
+      effort_choice,
     }),
+  catalog: () => req<CatalogProvider[]>("/catalog"),
   upload: (name: string, data: string) =>
     post<{ id: string; name: string; mime: string }>("/uploads", { name, data }),
   cancelMessage: (id: number) => post<Message>(`/messages/${id}/cancel`, {}),

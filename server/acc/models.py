@@ -71,8 +71,11 @@ class Chat(Base):
     summary_until: Mapped[int | None] = mapped_column()  # last message id folded into summary
     # The assistant's own conversation id (Claude Code session), resumed on every turn.
     claude_session: Mapped[str | None] = mapped_column(String(64))
-    # The model the user picked under the composer: auto | haiku | sonnet | opus.
-    model_choice: Mapped[str | None] = mapped_column(String(16))
+    # The model picked under the composer: "auto" or "<provider>/<model id>", and its effort.
+    model_choice: Mapped[str | None] = mapped_column(String(120))
+    effort_choice: Mapped[str | None] = mapped_column(String(16))
+    # Last message Claude's own session has seen; turns by other models after it are replayed.
+    claude_seen_until: Mapped[int | None] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

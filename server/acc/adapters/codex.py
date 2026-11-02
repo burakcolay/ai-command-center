@@ -41,7 +41,7 @@ from acc.cost_guard import sanitized_env
 
 WRITE_TOOLS = {"Write", "Edit", "Bash"}
 # Reasoning levels every listed model takes (codex debug models, 0.166).
-EFFORTS = {"low", "medium", "high", "xhigh", "max"}
+EFFORTS = {"low", "medium", "high", "xhigh", "max", "ultra"}  # "ultra" only on some models
 _NO_MODEL = (
     "not supported",
     "not available",

@@ -25,6 +25,7 @@ from acc import (
     assistant,
     attachments,
     card,
+    catalog,
     config,
     designs,
     intent,
@@ -38,6 +39,7 @@ from acc import (
 )
 from acc.adapters import Registry
 from acc.adapters.base import AdapterError, ModelState, QuotaExceeded, RunRequest, SessionLost
+from acc.cost_guard import check_allowed
 from acc.db import session
 from acc.events import broker
 from acc.gitops import GitError
@@ -53,6 +55,16 @@ KEEP_RECENT = 6  # newest messages always sent verbatim
 TEAM_ADAPTERS = ("claude_code", "mock")  # leads that can delegate to subagents
 NOTIFY_AFTER_S = 45  # long turns (research, big edits) end with a desktop notification
 RESUME_MARGIN_S = 60  # wait this long past the quota reset before continuing
+PICKED_LOCAL_NOTE = (
+    "(Not: Bu sohbette yerel model seçili; proje dosyalarına ve web'e erişimin yok, değişiklik "
+    "yapamazsın. Bunlar gerekiyorsa kullanıcıya model seçiciden başka bir model seçmesini "
+    "söyle.)\n\n"
+)
+READER_NOTE = (
+    "(Not: Bu sohbette {name} seçili: dosyaları okuyabilir ve web'de arayabilirsin ama dosya "
+    "değiştiremez, tasarım ya da rapor dosyası yazamazsın. Değişiklik istenirse kullanıcıya model "
+    "seçiciden Claude ya da Codex'i seçmesini söyle.)\n\n"
+)
 BACKUP_NOTE = (
     "(Not: Claude şu an kullanılamıyor; bu yanıtı yedek model ({name}) veriyor. Proje "
     "dosyalarına erişimi yok, değişiklik yapamaz.)\n\n"
@@ -245,6 +257,8 @@ class ChatService:
             project_path = Path(project.path) if project else None
             claude_session = chat.claude_session
             model_pick = chat.model_choice or "auto"
+            effort_pick = chat.effort_choice
+            claude_seen = chat.claude_seen_until or 0
             earlier = s.scalars(
                 select(Message.id)
                 .where(
@@ -253,14 +267,26 @@ class ChatService:
                 .order_by(Message.id.desc())
             ).all()
 
-        choice = await self.router.pick("assistant", needs_tools=True)
-        adapter, local = choice.adapter, False
-        if adapter is None:  # Claude unavailable: a local model can still talk
-            adapter, local = (await self.router.pick("summarize")).adapter, True
+        # The model picked under the composer, if it can answer now; else Orbit decides.
+        provider, picked_model = catalog.split(model_pick)
+        adapter, local, notice = None, False, ""
+        if provider:
+            adapter, why = await self._usable(provider)
+            if adapter is None:
+                notice = f"_(Seçilen model şu an kullanılamıyor: {why} Otomatik kullanıldı.)_\n\n"
+                provider = None
+            elif provider == "ollama":
+                local = True  # picked on purpose: no files, no web
         if adapter is None:
-            reason = "; ".join(choice.skipped) or "kayıtlı model yok"
-            self._finish(message_id, f"Yanıt verecek model yok ({reason}).", "error")
-            return
+            choice = await self.router.pick("assistant", needs_tools=True)
+            adapter = choice.adapter
+            if adapter is None:  # Claude unavailable: a local model can still talk
+                adapter, local = (await self.router.pick("summarize")).adapter, True
+            if adapter is None:
+                reason = "; ".join(choice.skipped) or "kayıtlı model yok"
+                self._finish(message_id, f"Yanıt verecek model yok ({reason}).", "error")
+                return
+        reader_only = adapter.info.id == "gemini"  # can read and search, never edit
 
         # Where the assistant works: the chat's isolated project copy, or a private folder.
         ws = None
@@ -271,6 +297,8 @@ class ChatService:
             try:
                 ws = await sessions.workspace(chat_id)
                 cwd, tools = ws.cwd, assistant.PROJECT_TOOLS
+                if reader_only:
+                    tools = assistant.READ_ONLY_TOOLS
             except GitError as e:
                 cwd, tools = project_path, assistant.READ_ONLY_TOOLS
                 note = (
@@ -288,7 +316,8 @@ class ChatService:
         card_text = card.read(cwd) if project_path and not local else None
         # Plain talk on "auto" goes light: middle model, low effort, read-only, no team.
         light = (
-            model_pick == "auto"
+            provider is None
+            and model_pick == "auto"
             and adapter.info.id in TEAM_ADAPTERS
             and not local
             and intent.is_light(question, attached)
@@ -309,28 +338,34 @@ class ChatService:
         # The conductor's model and effort: the user's pick under the composer, the light
         # setting for plain talk, else the plan for the chosen quality.
         lead_power = assistant.plan()["lead"]
+        lead_effort: str | None = lead_power.effort
         if light:
             lead_power = tiers.Power("orta", "low")
-            lead_model = lead_power.model_for("claude_code")
-        elif model_pick != "auto" and adapter.info.id in TEAM_ADAPTERS:
-            picked = {"haiku": "hafif", "sonnet": "orta", "opus": "guclu"}[model_pick]
-            effort = {"haiku": "low", "sonnet": "medium"}.get(model_pick, lead_power.effort)
-            lead_power = tiers.Power(picked, effort)
-            lead_model = model_pick
+            lead_model, lead_effort = lead_power.model_for("claude_code"), lead_power.effort
+        elif provider and provider == adapter.info.id:  # the user's own pick
+            lead_model = picked_model
+            lead_effort = effort_pick or catalog.default_effort(provider, picked_model)
         elif adapter.info.id in TEAM_ADAPTERS:  # Claude (or the demo standing in for it)
             lead_model = assistant.lead_model()
         else:
             lead_model = lead_power.model_for(adapter.info.id)
         orchestra = Orchestra(message_id)
         self._orchestras[message_id] = orchestra
-        orchestra.set_lead(adapter.info.id, lead_model, lead_power.effort)
+        orchestra.set_lead(adapter.info.id, lead_model, lead_effort)
         if plan:
             orchestra.set_roster(plan.agents, plan.labels or {}, plan.codex_areas or {})
 
         def build(with_history: bool) -> str:
-            parts = [BACKUP_NOTE.format(name=adapter.info.name) if local else note]
+            if local and provider == "ollama":
+                parts = [PICKED_LOCAL_NOTE]
+            else:
+                parts = [BACKUP_NOTE.format(name=adapter.info.name) if local else note]
+            if reader_only:
+                parts.append(READER_NOTE.format(name=adapter.info.name))
             if light:
                 parts.append(intent.LIGHT_NOTE)
+            if with_history is False and missed:
+                parts.append(f"ARADA BAŞKA MODELLERLE KONUŞULANLAR:\n{missed}\n\n")
             if project_name:
                 where = f"\nÇALIŞMA KOPYASI: {cwd}" if ws else ""
                 parts.append(f"PROJE: {project_name} ({project_path}){where}\n\n")
@@ -350,6 +385,10 @@ class ChatService:
             return "".join(parts)
 
         resume = claude_session if adapter.info.id == "claude_code" else None
+        missed = ""  # turns by other models since Claude's session last saw the chat
+        if resume and claude_seen:
+            with session() as s:
+                missed = transcript(s, chat_id, user_id, after_id=claude_seen)
         history = ""
         if not resume:
             await self._maybe_compact(chat_id, user_id)
@@ -370,7 +409,7 @@ class ChatService:
                 settings=assistant.settings(tools),
                 stream_text=True,
                 model=lead_model,
-                effort=lead_power.effort,
+                effort=lead_effort,
                 read_dirs=[] if local else attachments.read_dirs(),
                 output_dir=None if local else out_dir,
                 session_id=new_session,
@@ -401,6 +440,9 @@ class ChatService:
             if new_session:
                 with session() as s:
                     s.get(Chat, chat_id).claude_session = new_session
+            if adapter.info.id == "claude_code":
+                with session() as s:
+                    s.get(Chat, chat_id).claude_seen_until = message_id
             if light and intent.ESCALATE in text:
                 # The light turn saw real work in it: the same message, now with the full plan.
                 light = False
@@ -408,7 +450,8 @@ class ChatService:
                 plan = assistant.setup(tools, card_text, codex, cwd)
                 lead_tools, lead_system, team, mcp = plan.tools, plan.system, plan.agents, plan.mcp
                 lead_power, lead_model = assistant.plan()["lead"], assistant.lead_model()
-                orchestra.set_lead(adapter.info.id, lead_model, lead_power.effort)
+                lead_effort = lead_power.effort
+                orchestra.set_lead(adapter.info.id, lead_model, lead_effort)
                 orchestra.set_roster(plan.agents, plan.labels or {}, plan.codex_areas or {})
                 buf.clear()
                 again = request(new_session or resume, None, prompt=build(with_history=False))
@@ -424,7 +467,7 @@ class ChatService:
                     if reviewed:
                         meta["review"] = reviewed
             meta["team"] = orchestra.finish()
-            self._finish(message_id, text, "done", adapter.info.id, meta)
+            self._finish(message_id, notice + text, "done", adapter.info.id, meta)
             if time.monotonic() - started > NOTIFY_AFTER_S:
                 notify.send("Orbit yanıt verdi", question.strip().splitlines()[0][:120])
         except QuotaExceeded as e:
@@ -491,6 +534,20 @@ class ChatService:
             elif ev.kind == "error":
                 raise AdapterError(ev.data.get("text") or "Bilinmeyen hata")
         raise AdapterError("Model yanıtı tamamlamadan durdu.")
+
+    async def _usable(self, provider: str):
+        """The picked provider's adapter if it can answer now, else (None, why)."""
+        adapter = self.registry.get(provider)
+        if adapter is None:
+            return None, "kurulu değil."
+        try:
+            check_allowed(adapter.info)
+        except Exception as e:
+            return None, str(e)
+        health = await self.registry.health(provider)
+        if health.state != ModelState.AVAILABLE:
+            return None, health.detail
+        return adapter, ""
 
     async def _codex_ready(self) -> bool:
         if self.registry.get("codex") is None:

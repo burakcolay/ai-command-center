@@ -161,6 +161,8 @@ class AntigravityAdapter(ModelAdapter):
             f"{TIMEOUT_S}s",
             "--sandbox",
         ]
+        if req.model:
+            args += ["--model", req.model]
         if req.effort:
             args += ["--effort", req.effort]
         if req.json_schema:

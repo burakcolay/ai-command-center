@@ -149,3 +149,19 @@ def test_a_turn_that_breaks_early_ends_as_an_error_not_stuck(client, monkeypatch
     chat_id = new_chat(client)
     m = wait_msg(client, chat_id, send(client, chat_id, "Merhaba"), "error")
     assert "erken hata" in m["content"]
+
+
+def test_picking_a_model_keeps_claudes_own_conversation(client):
+    claude = _Claude()
+    original = use(claude)
+    try:
+        chat_id = new_chat(client)
+        pick = {"model_choice": "claude_code/claude-opus-5-5", "effort_choice": "high"}
+        for text in ("Uygulamanın adı Kuzey olsun", "Adı neydi?"):
+            r = client.post(f"/api/chats/{chat_id}/messages", json={"content": text, **pick})
+            wait_msg(client, chat_id, r.json()["messages"][1]["id"])
+        first, second = claude.requests
+        assert second.resume == first.session_id and "SOHBET GEÇMİŞİ" not in second.prompt
+    finally:
+        registry._adapters = original
+        registry._health.clear()

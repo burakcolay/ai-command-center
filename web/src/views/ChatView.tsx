@@ -34,7 +34,8 @@ interface Props {
   projects: Project[];
   projectId: number | null;
   modelChoice: ModelChoice;
-  onModelChoiceChange: (c: ModelChoice) => void;
+  effortChoice: string | null;
+  onModelChoiceChange: (c: ModelChoice, effort: string | null) => void;
   demoMode: boolean;
   onProjectChange: (id: number | null) => void;
   onSend: (text: string, attachments: string[]) => Promise<void>;
@@ -98,6 +99,7 @@ export function ChatView(p: Props) {
       projectId={p.projectId}
       onProjectChange={p.onProjectChange}
       modelChoice={p.modelChoice}
+      effortChoice={p.effortChoice}
       onModelChoiceChange={p.onModelChoiceChange}
       onSend={p.onSend}
       prefill={prefill}

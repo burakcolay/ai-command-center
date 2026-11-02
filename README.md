@@ -89,9 +89,20 @@ Her aşamanın sonunda tek bir değişiklik kartı görürsün; "devam" deyince 
 - **Gemini (ikinci göz):** Google hesabınla (AI Plus/Pro) çalışır. Codex yoksa Claude'un değişikliklerini o inceler; uzun sohbet özetlerini de o çıkarır, böylece Claude'un kotası harcanmaz. Kod yazmaz.
 - **Ollama (yerel):** Varsa uzun sohbetleri ücretsiz özetler.
 
-**Model seçici:** Yazma kutusunun altında **Otomatik / Haiku / Sonnet / Opus** seçimi var; her sohbet kendi seçimini hatırlar.
+**Model seçici:** Yazma kutusundaki model düğmesi bir panel açar. Panelde **Otomatik** ve her sağlayıcının modelleri vardır:
+- **Claude:** Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1.
+- **Codex:** `codex debug models`'tan, ör. GPT-6.1 Sol, GPT-6 Astra, GPT-6 Luna.
+- **Gemini:** Antigravity hesabındaki modeller (`agy models`), Antigravity üzerinden sunulan Claude ve GPT-OSS dahil.
+- **Yerel:** Ollama'da kurulu modeller.
+
+Seçilen modelin altında o modelin desteklediği efor seviyeleri çıkar (low, medium, high, xhigh, max; bazı Codex modellerinde ultra). Her sohbet kendi seçimini hatırlar. Kurulu ya da kullanılabilir olmayan sağlayıcı nedeniyle birlikte soluk görünür. Seçilen model o an kullanılamıyorsa cevap Otomatik ile verilir ve bu cevabın başında yazar.
+- **Claude seçiliyse:** Ekip ve Codex köprüsü dahil her şey çalışır.
+- **Codex seçiliyse:** Dosya değiştirir ve komut çalıştırır, ama Claude'un ekibi olmadan.
+- **Gemini seçiliyse:** Okur ve araştırır, dosya değiştiremez.
+- **Yerel model seçiliyse:** Yalnızca sohbet eder.
+- **Model değiştirince:** Sohbet ortasında Claude'dan başka bir modele geçip geri dönersen, aradaki konuşmalar Claude'a ayrıca aktarılır; Claude kendi oturumunu sürdürür.
 - **Otomatik (önerilen):** Orbit mesajı token harcamadan inceler. Sıradan sohbet ("aklımda bir fikir var", "sence tutar mı?") Sonnet · low ile, ekip ve yazma araçları olmadan gider. Ölçüm: bir sohbet girişi Opus ve tam ekiple yaklaşık 14-25 bin token tutarken bu modda yaklaşık 6 bin token tutuyor ve daha ucuz bir model kullanılıyor. Gerçek iş ("ekle", "araştır", "tasarla", "tamam, başla") tam plana gider. Orbit bir işi yanlışlıkla sohbet sanarsa model bunu söyler ve aynı mesaj tam güçle yeniden işlenir (gerçek denemede yaklaşık 5 bin token ek maliyet).
-- **Haiku / Sonnet / Opus:** Liderin modelini sen seçersin; yetenekler (araçlar, ekip) değişmez.
+- **Belirli bir model:** Liderin modelini ve eforunu sen seçersin.
 
 **Kim hangi modelle çalışır:** Her rolün bir model seviyesi (güçlü / orta / hafif) ve bir eforu vardır. Orbit seviyeyi Claude'da Opus / Sonnet / Haiku'ya, Codex'te GPT-6 Astra / GPT-6.1 Sol / GPT-6 Luna'ya çevirir. Dengeli kalitede:
 - **Lider:** Opus · high. Planlar, işi böler, kontrol eder.
@@ -219,6 +230,7 @@ server/acc/       FastAPI backend
   tiers.py        Rol başına model seviyesi ve efor (Claude ve Codex karşılıkları)
   orchestra.py    Canlı orkestra: kim, hangi modelle, ne yapıyor, kaç token
   intent.py       Mesaj sohbet mi iş mi (token harcamadan)
+  catalog.py      Seçilebilir modeller ve eforlar (sağlayıcıların kendi listelerinden)
   chat.py         Sohbet turu: model seçimi, oturum, çıktılar
   sessions.py     Sohbetteki değişiklikler: kopya, commit, kontroller, birleştirme
   github.py       Değişiklikleri GitHub'a PR olarak gönderme

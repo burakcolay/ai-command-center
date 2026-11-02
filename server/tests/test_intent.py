@@ -7,7 +7,7 @@ from acc.adapters import registry
 from acc.adapters.base import AdapterEvent
 from acc.adapters.mock import MockAdapter
 from acc.events import broker
-from tests.helpers import Recorder, chat_state, new_chat, project, turn, use
+from tests.helpers import Recorder, new_chat, project, turn, use
 
 
 def test_talk_or_work():
@@ -52,24 +52,32 @@ def test_work_gets_the_full_plan(client, rec):
 
 def test_the_users_pick_is_kept_for_the_chat(client, rec):
     chat_id = new_chat(client)
-    r = client.post(
-        f"/api/chats/{chat_id}/messages", json={"content": "Merhaba", "model_choice": "haiku"}
-    )
-    assert r.json()["chat"]["model_choice"] == "haiku"
+    pick = {"model_choice": "mock/claude-haiku-5-5", "effort_choice": "max"}
+    r = client.post(f"/api/chats/{chat_id}/messages", json={"content": "Merhaba", **pick})
+    assert r.json()["chat"]["model_choice"] == "mock/claude-haiku-5-5"
+    assert r.json()["chat"]["effort_choice"] == "max"
     from tests.helpers import wait_msg
 
     wait_msg(client, chat_id, r.json()["messages"][1]["id"])
     turn(client, chat_id, "Rakipleri araştır")  # no pick sent: the chat's pick stays
     for req in rec.requests:
-        assert (req.model, req.effort) == ("haiku", "low")
+        assert (req.model, req.effort) == ("claude-haiku-5-5", "max")
     assert "Agent" in rec.requests[-1].tools  # a pick changes the model, not the abilities
-    assert chat_state(client, chat_id)["chat"]["model_choice"] == "haiku"
-    assert (
-        client.post(
-            f"/api/chats/{chat_id}/messages", json={"content": "x", "model_choice": "gpt"}
-        ).status_code
-        == 422
-    )
+    bad = {"content": "x", "model_choice": "x/y; rm -rf"}
+    assert client.post(f"/api/chats/{chat_id}/messages", json=bad).status_code == 422
+    bad = {"content": "x", "model_choice": "codex/gpt", "effort_choice": "banana"}
+    assert client.post(f"/api/chats/{chat_id}/messages", json=bad).status_code == 422
+
+
+def test_an_unusable_pick_falls_back_and_says_so(client, rec):
+    chat_id = new_chat(client)
+    body = {"content": "Rakipleri araştır", "model_choice": "codex/gpt-6.1-sol"}
+    r = client.post(f"/api/chats/{chat_id}/messages", json=body)
+    from tests.helpers import wait_msg
+
+    m = wait_msg(client, chat_id, r.json()["messages"][1]["id"])
+    assert m["content"].startswith("_(Seçilen model şu an kullanılamıyor:")
+    assert m["adapter_id"] == "mock"
 
 
 class HandsBack(Recorder):

@@ -31,6 +31,7 @@ def chat(c: Chat) -> dict[str, Any]:
         "title": c.title,
         "project_id": c.project_id,
         "model_choice": c.model_choice or "auto",
+        "effort_choice": c.effort_choice,
         "created_at": _ts(c.created_at),
     }
 

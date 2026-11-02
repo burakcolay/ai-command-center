@@ -237,7 +237,12 @@ Kullanıcı model seçmez; iş bölümü koddadır.
   - Hafif tur: Sonnet · low, salt okunur araçlar, ekip ve köprü yok.
   - Hafif model mesajın aslında iş olduğuna karar verirse yalnızca `[[ORBIT:TAM_GUC]]` yazar. Bu işaret akışta tutulup ekrana hiç yansımaz; aynı mesaj aynı Claude oturumunda tam planla yeniden işlenir.
   - Gerçek deneme: sohbet girişi Sonnet 5.5 · low ile yaklaşık 6,1 bin token tuttu. Kaçırılan bir iş mesajında hafif tur 38 çıktı token'ıyla işi geri verdi ve Opus işi yaptı.
-- **Seçici:** `chats.model_choice` (auto | haiku | sonnet | opus) her mesajla gönderilir ve sohbette kalır. Seçim yalnızca liderin modelini ve eforunu değiştirir (haiku · low, sonnet · medium, opus · plan eforu); araçlar ve ekip değişmez.
+- **Seçici** (`catalog.py`, `GET /api/catalog`): `chats.model_choice` ("auto" ya da "<sağlayıcı>/<model>", eski "haiku/sonnet/opus" da geçerli) ve `chats.effort_choice` her mesajla gönderilir, sohbette kalır ve `^(auto|…|(claude_code|codex|gemini|ollama|mock)/[\w.:-]+)$` ile doğrulanır.
+  - Model listeleri sağlayıcılardan gelir ve 10 dakika önbelleklenir: Codex `codex debug models` (görünürlüğü "list" olanlar ve modelin efor seviyeleri), Gemini `agy models`, yerel modeller Ollama'dan. Claude'un listesi sabittir (Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1); abonelikte olmayan model 404 ile varsayılana düşer.
+  - Seçilen sağlayıcı kullanılamıyorsa (kurulu değil, giriş yok, kota, ücretli) tur Otomatik ile çalışır ve cevabın başına neden yazılır.
+  - Codex lider olabilir (ekip yok). Gemini okuyup arar ama dosya değiştirmez; istemde bu söylenir. Yerel model araçsız çalışır.
+  - `chats.claude_seen_until`: Claude kendi oturumunu sürdürürken, oturumun görmediği diğer modellerin turları "ARADA BAŞKA MODELLERLE KONUŞULANLAR" olarak eklenir.
+  - Düzeltilen hata: model seçimi eklendiğinde Claude oturumu her mesajda yanlışlıkla sıfırlanıyordu (geçmiş her turda metin olarak gidiyordu). Artık yalnızca proje değişince sıfırlanır; testle korunuyor.
 - **Sağlamlık:** Tur, kendi hata yakalamasından önce bir hata verirse `_guarded` mesajı hata olarak bitirir; mesaj "yazılıyor" durumunda kalmaz.
 - **Token toplamı:** Bir turdaki bütün çalıştırmalar (hafif tur, tam tur, ayrı oturumda inceleme) modele göre toplanır.
 

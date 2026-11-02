@@ -33,6 +33,7 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<number | null>(null);
   const [modelChoice, setModelChoice] = useState<ModelChoice>("auto");
+  const [effortChoice, setEffortChoice] = useState<string | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [system, setSystem] = useState<SystemInfo | null>(null);
@@ -63,6 +64,7 @@ export default function App() {
     setTasks((prev) => ({ ...prev, ...Object.fromEntries(data.tasks.map((t) => [t.id, t])) }));
     setProjectId(data.chat.project_id);
     setModelChoice(data.chat.model_choice ?? "auto");
+    setEffortChoice(data.chat.effort_choice ?? null);
     setView("chat");
     setMenuOpen(false);
   }, []);
@@ -126,7 +128,7 @@ export default function App() {
         setChatId(id);
         setMessages([]);
       }
-      const r = await api.send(id, text, projectId, attachments, modelChoice);
+      const r = await api.send(id, text, projectId, attachments, modelChoice, effortChoice);
       setMessages((prev) => [...prev, ...r.messages.filter((x) => !prev.some((y) => y.id === x.id))]);
       void loadChats();
     } catch (e) {
@@ -147,6 +149,7 @@ export default function App() {
     setChatId(null);
     setMessages([]);
     setModelChoice("auto");
+    setEffortChoice(null);
     setView("chat");
     setMenuOpen(false);
   };
@@ -199,7 +202,11 @@ export default function App() {
               projects={projects}
               projectId={projectId}
               modelChoice={modelChoice}
-              onModelChoiceChange={setModelChoice}
+              effortChoice={effortChoice}
+              onModelChoiceChange={(c, e) => {
+                setModelChoice(c);
+                setEffortChoice(e);
+              }}
               activity={activity}
               teams={teams}
               demoMode={system?.demo_mode ?? false}

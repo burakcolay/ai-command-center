@@ -9,8 +9,10 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "../lib/api";
 import { ACCEPT, isAttachable, type PendingAttachment, uploadFile } from "../lib/attachments";
-import type { ModelChoice, Project, Template } from "../lib/types";
+import type { CatalogProvider, ModelChoice, Project, Template } from "../lib/types";
+import { ModelPicker, pickLabel } from "./ModelPicker";
 import { TemplatePicker } from "./TemplatePicker";
 
 interface Props {
@@ -18,7 +20,8 @@ interface Props {
   projectId: number | null;
   onProjectChange: (id: number | null) => void;
   modelChoice: ModelChoice;
-  onModelChoiceChange: (c: ModelChoice) => void;
+  effortChoice: string | null;
+  onModelChoiceChange: (c: ModelChoice, effort: string | null) => void;
   onSend: (text: string, attachments: string[]) => Promise<void>;
   /** Set from outside (e.g. "Bunu uygula"); `nonce` makes repeats apply. */
   prefill?: { text: string; nonce: number; attachments?: PendingAttachment[] };
@@ -36,17 +39,6 @@ function selectPlaceholder(el: HTMLTextAreaElement) {
   else el.setSelectionRange(el.value.length, el.value.length);
 }
 
-const MODEL_CHOICES: { id: ModelChoice; label: string; hint: string }[] = [
-  {
-    id: "auto",
-    label: "Otomatik",
-    hint: "Sohbet hafif modelle (Sonnet · low), gerçek iş kalite planıyla. Önerilen.",
-  },
-  { id: "haiku", label: "Haiku · hızlı", hint: "En az kota; kısa sorular ve basit işler." },
-  { id: "sonnet", label: "Sonnet · dengeli", hint: "Çoğu iş için yeterli; kotayı idareli kullanır." },
-  { id: "opus", label: "Opus · güçlü", hint: "Zor işler; kotayı en hızlı bitirir." },
-];
-
 const PLACEHOLDER = "Ne yapmak istediğini yaz…";
 
 export function Composer(p: Props) {
@@ -57,6 +49,12 @@ export function Composer(p: Props) {
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const [picker, setPicker] = useState(false);
+  const [modelsOpen, setModelsOpen] = useState(false);
+  const [catalog, setCatalog] = useState<CatalogProvider[] | null>(null);
+  useEffect(() => {
+    if (p.modelChoice !== "auto" && catalog === null)
+      api.catalog().then(setCatalog).catch(() => setCatalog([]));
+  }, [p.modelChoice, catalog]);
   const [active, setActive] = useState(0);
   const items = useRef<Template[]>([]);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -150,6 +148,18 @@ export function Composer(p: Props) {
         void addFiles(e.dataTransfer.files);
       }}
     >
+      {modelsOpen && (
+        <ModelPicker
+          choice={p.modelChoice}
+          effort={p.effortChoice}
+          onChange={(c, e) => {
+            p.onModelChoiceChange(c, e);
+            if (c === "auto") setModelsOpen(false);
+          }}
+          onClose={() => setModelsOpen(false)}
+          onError={p.onError}
+        />
+      )}
       {pickerOpen && (
         <TemplatePicker
           query={slash ? text.slice(1) : ""}
@@ -274,24 +284,18 @@ export function Composer(p: Props) {
           >
             <LayoutTemplate size={14} strokeWidth={1.6} />
           </button>
-          <label
+          <button
+            type="button"
+            onClick={() => setModelsOpen((o) => !o)}
+            aria-expanded={modelsOpen}
+            title="Model ve efor"
             className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-dim hover:text-fg"
-            title={MODEL_CHOICES.find((c) => c.id === p.modelChoice)?.hint}
           >
             <Cpu size={13} strokeWidth={1.6} className="shrink-0" />
-            <select
-              value={p.modelChoice}
-              onChange={(e) => p.onModelChoiceChange(e.target.value as ModelChoice)}
-              className="min-w-0 max-w-36 cursor-pointer truncate bg-transparent font-mono text-[11px] tracking-wide focus:outline-none"
-              aria-label="Model"
-            >
-              {MODEL_CHOICES.map((c) => (
-                <option key={c.id} value={c.id} className="bg-panel">
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </label>
+            <span className="max-w-40 truncate font-mono text-[11px] tracking-wide">
+              {pickLabel(catalog, p.modelChoice, p.effortChoice)}
+            </span>
+          </button>
           <label
             className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-dim hover:text-fg"
             title="Proje seçersen asistan dosyaları okuyabilir ve değişiklik yapabilir (projenin bir kopyasında)."

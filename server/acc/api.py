@@ -15,6 +15,7 @@ from sqlalchemy import select
 from acc import (
     attachments,
     card,
+    catalog,
     checks,
     config,
     designs,
@@ -242,8 +243,9 @@ class MessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=100_000)  # long specs can be pasted
     project_id: int | None = None
     attachments: list[str] = Field(default_factory=list, max_length=6)
-    # The lead's model for this chat: Orbit decides (auto) or the user picks one.
-    model_choice: Literal["auto", "haiku", "sonnet", "opus"] | None = None
+    # The lead's model for this chat: Orbit decides ("auto") or "<provider>/<model id>".
+    model_choice: str | None = Field(default=None, max_length=120)
+    effort_choice: Literal["low", "medium", "high", "xhigh", "max", "ultra"] | None = None
 
 
 @router.get("/chats")
@@ -298,6 +300,8 @@ async def delete_chat(chat_id: int):
 async def post_message(chat_id: int, body: MessageIn):
     """Every message is a turn for the one assistant; it decides what the message asks for."""
     content = body.content.strip()
+    if body.model_choice and not catalog.valid(body.model_choice):
+        raise HTTPException(422, "Geçersiz model seçimi.")
     for attachment_id in body.attachments:
         try:
             attachments.resolve(attachment_id)
@@ -320,9 +324,10 @@ async def post_message(chat_id: int, body: MessageIn):
             raise HTTPException(409, "Önceki yanıt hâlâ yazılıyor.")
         if switching:
             c.project_id = body.project_id
+            c.claude_session = None  # a different working folder needs a fresh conversation
         if body.model_choice:
             c.model_choice = body.model_choice
-            c.claude_session = None  # a different working folder needs a fresh conversation
+            c.effort_choice = body.effort_choice
         if c.title == "Yeni sohbet":
             c.title = content[:60]
         user_msg = Message(
@@ -488,6 +493,12 @@ async def list_models(fresh: bool = False):
             }
         )
     return out
+
+
+@router.get("/catalog")
+async def model_catalog():
+    """Every pickable model per provider, with the efforts each takes."""
+    return await catalog.catalog(registry)
 
 
 @router.get("/routing")

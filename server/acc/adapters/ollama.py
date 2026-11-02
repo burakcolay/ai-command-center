@@ -116,7 +116,7 @@ class OllamaAdapter(ModelAdapter):
         health = await self.health_check()
         if health.state != ModelState.AVAILABLE:
             raise AdapterError(health.detail)
-        model = health.data["selected"]
+        model = req.model or health.data["selected"]  # the user's pick, else the default
         messages = []
         if req.system_prompt:
             messages.append({"role": "system", "content": req.system_prompt})

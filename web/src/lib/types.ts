@@ -67,13 +67,32 @@ export interface Project {
   created_at: string;
 }
 
-export type ModelChoice = "auto" | "haiku" | "sonnet" | "opus";
+/** "auto" or "<provider>/<model id>", e.g. "codex/gpt-6.1-sol". */
+export type ModelChoice = string;
+
+export interface CatalogModel {
+  id: string;
+  label: string;
+  efforts: string[];
+  effort: string;
+  note: string;
+}
+
+export interface CatalogProvider {
+  id: string;
+  name: string;
+  available: boolean;
+  reason: string;
+  note: string;
+  models: CatalogModel[];
+}
 
 export interface Chat {
   id: number;
   title: string;
   project_id: number | null;
   model_choice: ModelChoice;
+  effort_choice: string | null;
   created_at: string;
 }
 
